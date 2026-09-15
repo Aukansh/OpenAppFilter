@@ -83,7 +83,7 @@ int check_app_icon_exist(int app_id)
     return with_icon;
 }
 
-void ubus_dump_visit_list(struct blob_buf *b, char *mac)
+void ubus_dump_visit_list(struct blob_buf *b, const char *mac)
 {
     int i, j;
     void *c, *array;
@@ -198,8 +198,8 @@ appfilter_handle_dev_visit_list(struct ubus_context *ctx, struct ubus_object *ob
         }
     }
 
-    char *mac = json_object_get_string(mac_obj);
-    dev_node_t *node = find_dev_node(mac);
+    const char *mac = json_object_get_string(mac_obj);
+    dev_node_t *node = find_dev_node((char *)mac);
 
     if (!node)
     {
@@ -299,12 +299,12 @@ appfilter_handle_dev_visit_list(struct ubus_context *ctx, struct ubus_object *ob
 }
 
 
-void update_app_visit_time_list(char *mac, struct app_visit_stat_info *visit_info)
+void update_app_visit_time_list(const char *mac, struct app_visit_stat_info *visit_info)
 {
     int i, j, s;
     int num = 0;
 
-    dev_node_t *node = find_dev_node(mac);
+    dev_node_t *node = find_dev_node((char *)mac);
     if (!node)
     {
         printf("not found mac:%s\n", mac);
@@ -347,12 +347,12 @@ void update_app_visit_time_list(char *mac, struct app_visit_stat_info *visit_inf
         visit_info->num = MAX_APP_STAT_NUM;
 }
 
-void update_app_class_visit_time_list(char *mac, int *visit_time)
+void update_app_class_visit_time_list(const char *mac, int *visit_time)
 {
     int i, j, s;
     int num = 0;
 
-    dev_node_t *node = find_dev_node(mac);
+    dev_node_t *node = find_dev_node((char *)mac);
     if (!node)
     {
         printf("not found mac:%s\n", mac);
@@ -1013,7 +1013,7 @@ static int handle_set_app_filter_adv(struct ubus_context *ctx, struct ubus_objec
     if (tcp_rst_obj)
         af_uci_set_int_value(uci_ctx, "appfilter.global.tcp_rst", json_object_get_int(tcp_rst_obj));
     if (lan_ifname_obj)
-        af_uci_set_value(uci_ctx, "appfilter.global.lan_ifname", json_object_get_string(lan_ifname_obj));
+        af_uci_set_value(uci_ctx, "appfilter.global.lan_ifname", (char *)json_object_get_string(lan_ifname_obj));
     if (disable_hnat_obj)
         af_uci_set_int_value(uci_ctx, "appfilter.global.disable_hnat", json_object_get_int(disable_hnat_obj));
     if (auto_load_engine_obj){
@@ -1167,7 +1167,7 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
                     json_object_array_add(period_weekdays, json_object_new_int(atoi(wd)));
                     wd = strtok_r(NULL, ",", &saveptr2);
                 }
-                printf("ubus period[%d] weekday_list size: %d\n", period_count, json_object_array_length(period_weekdays));
+                printf("ubus period[%d] weekday_list size: %zu\n", period_count, json_object_array_length(period_weekdays));
             } else {
                 // Use global weekdays as fallback
                 int i;
@@ -1180,7 +1180,7 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
             json_object_object_add(period_obj, "weekday_list", period_weekdays);
             
             json_object_array_add(time_array, period_obj);
-            printf("ubus period[%d] added to array, current array length: %d\n", period_count, json_object_array_length(time_array));
+            printf("ubus period[%d] added to array, current array length: %zu\n", period_count, json_object_array_length(time_array));
         } else {
             printf("ubus period[%d] ERROR: no delimiter found\n", period_count);
         }
@@ -1391,8 +1391,8 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
         }
         af_uci_set_int_value(uci_ctx, "appfilter.time.deny_time", json_object_get_int(deny_time_obj));
         af_uci_set_int_value(uci_ctx, "appfilter.time.allow_time", json_object_get_int(allow_time_obj));
-        af_uci_set_value(uci_ctx, "appfilter.time.start_time", json_object_get_string(start_time_obj));
-        af_uci_set_value(uci_ctx, "appfilter.time.end_time", json_object_get_string(end_time_obj));
+        af_uci_set_value(uci_ctx, "appfilter.time.start_time", (char *)json_object_get_string(start_time_obj));
+        af_uci_set_value(uci_ctx, "appfilter.time.end_time", (char *)json_object_get_string(end_time_obj));
     }
     else if (mode == 2) {
 
@@ -1900,7 +1900,7 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
     for (int i = 0; i < len; i++) {
         struct json_object *mac_obj = json_object_array_get_idx(mac_array, i);
         af_uci_add_section(uci_ctx, "appfilter", "af_user");
-        af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].mac", json_object_get_string(mac_obj));
+        af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].mac", (char *)json_object_get_string(mac_obj));
     }
     printf("add af_user ok\n");
     af_uci_commit(uci_ctx, "appfilter");
@@ -1975,8 +1975,8 @@ static int handle_set_nickname(struct ubus_context *ctx, struct ubus_object *obj
         if (index == -1) {
             af_uci_add_section(uci_ctx, "user_info", "user_info");
         }
-        af_uci_set_array_value(uci_ctx, "user_info.@user_info[%d].mac", index, json_object_get_string(mac_obj));
-        af_uci_set_array_value(uci_ctx, "user_info.@user_info[%d].nickname", index, json_object_get_string(nickname_obj));
+        af_uci_set_array_value(uci_ctx, "user_info.@user_info[%d].mac", index, (char *)json_object_get_string(mac_obj));
+        af_uci_set_array_value(uci_ctx, "user_info.@user_info[%d].nickname", index, (char *)json_object_get_string(nickname_obj));
     }
     else{
         char uci_option[128] = {0};
@@ -2222,7 +2222,7 @@ static int handle_add_whitelist_user(struct ubus_context *ctx, struct ubus_objec
     for (int i = 0; i < len; i++) {
         struct json_object *mac_obj = json_object_array_get_idx(mac_array, i);
         af_uci_add_section(uci_ctx, "appfilter", "whitelist");
-        af_uci_set_value(uci_ctx, "appfilter.@whitelist[-1].mac", json_object_get_string(mac_obj));
+        af_uci_set_value(uci_ctx, "appfilter.@whitelist[-1].mac", (char *)json_object_get_string(mac_obj));
     }
     af_uci_commit(uci_ctx, "appfilter");
     reload_oaf_rule();
