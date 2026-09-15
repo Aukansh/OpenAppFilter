@@ -110,7 +110,7 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
         return;
     }
 
-    mac = json_object_get_string(mac_obj);
+    mac = (char *)json_object_get_string(mac_obj);
 
     dev_node_t *node = find_dev_node(mac);
 
