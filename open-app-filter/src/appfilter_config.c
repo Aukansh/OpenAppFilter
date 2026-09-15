@@ -322,7 +322,7 @@ int af_uci_commit(struct uci_context *ctx, const char * package) {
     if (!package){
         return -1;
     }
-    if (uci_lookup_ptr(ctx, &ptr, package, true) != UCI_OK) {
+    if (uci_lookup_ptr(ctx, &ptr, (char *)package, true) != UCI_OK) {
         return -1;
     }   
 
