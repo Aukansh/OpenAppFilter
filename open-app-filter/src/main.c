@@ -579,7 +579,16 @@ int af_check_time_period_limit(af_time_config_t *t_config) {
         max_allowed_time = daily_limit->pm_time;
         LOG_DEBUG("Afternoon period: max_allowed_time=%d\n", max_allowed_time);
     }
-    
+
+    if (max_allowed_time == -1) {
+        LOG_DEBUG("Current period is disabled, block all access\n");
+        g_af_status.match_time = 1;
+        g_af_status.period_blocked = 1;
+        g_af_status.remain_time = 0;
+        g_af_status.used_time = 0;
+        return 1;
+    }
+	
     if (max_allowed_time <= 0) {
         LOG_DEBUG("No time limit set for current period\n");
         g_af_status.match_time = 0;
