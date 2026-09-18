@@ -957,12 +957,49 @@ void reset_all_users_today_flow(void)
 void check_all_users_period_time(void)
 {
     int i;
+    static time_t last_run = 0;
+    time_t now = time(NULL);
+    int minutes_elapsed = 0;
+
+    if (last_run == 0) {
+        last_run = now;
+        for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+            dev_node_t *node = dev_hash_table[i];
+            while (node) {
+                check_and_reset_today_active_time(node);
+                node = node->next;
+            }
+        }
+        return;
+    }
+
+    minutes_elapsed = (now - last_run) / 60;
+    if (minutes_elapsed <= 0) {
+        return;
+    }
+    last_run += minutes_elapsed * 60;
+
+    struct tm *tm_info = localtime(&now);
+    int current_hour = tm_info->tm_hour;
+
     for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++)
     {
         dev_node_t *node = dev_hash_table[i];
         while (node)
         {
             check_and_reset_today_active_time(node);
+
+            if (node->online && node->is_selected &&
+                (node->up_rate > 0 || node->down_rate > 0)) {
+                if (current_hour < 12) {
+                    node->today_am_active_time += minutes_elapsed;
+                } else {
+                    node->today_pm_active_time += minutes_elapsed;
+                }
+                LOG_DEBUG("period_time fallback: mac=%s elapsed=%d min, am=%u pm=%u\n",
+                          node->mac, minutes_elapsed,
+                          node->today_am_active_time, node->today_pm_active_time);
+            }
             
             node = node->next;
         }
