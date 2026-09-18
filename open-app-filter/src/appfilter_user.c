@@ -957,12 +957,28 @@ void reset_all_users_today_flow(void)
 void check_all_users_period_time(void)
 {
     int i;
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    int current_hour = tm_info->tm_hour;
+
     for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++)
     {
         dev_node_t *node = dev_hash_table[i];
         while (node)
         {
             check_and_reset_today_active_time(node);
+
+            if (node->online && node->is_selected &&
+                (node->up_rate > 0 || node->down_rate > 0)) {
+                if (current_hour < 12) {
+                    node->today_am_active_time += 1;
+                } else {
+                    node->today_pm_active_time += 1;
+                }
+                LOG_DEBUG("period_time fallback: mac=%s hour=%d, am=%u pm=%u\n",
+                          node->mac, current_hour,
+                          node->today_am_active_time, node->today_pm_active_time);
+            }
             
             node = node->next;
         }
