@@ -936,6 +936,12 @@ void reset_all_users_today_active_time(void)
         }
     }
     g_af_status.period_blocked = 0;
+
+    for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+        dev_node_t *node = dev_hash_table[i];
+        while (node) { node->blocked = 0; node = node->next; }
+    }
+    sync_blocked_macs_to_kernel();
 }
 
 

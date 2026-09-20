@@ -11,7 +11,9 @@
 
 
 DEFINE_RWLOCK(af_whitelist_mac_lock);
+DEFINE_RWLOCK(af_blocked_mac_lock);
 
+struct list_head af_blocked_mac_htable[MAX_AF_BLOCKED_MAC_HASH_SIZE];
 struct list_head af_whitelist_mac_htable[MAX_AF_MAC_HASH_SIZE];
 
 void af_whitelist_mac_init(void)
@@ -118,5 +120,104 @@ int af_config_set_whitelist_mac_list(cJSON *data_obj)
 		}
 		af_whitelist_mac_add(mac_hex);
 	}
+	return 0;
+}
+
+void af_blocked_mac_init(void)
+{
+	int i;
+	write_lock_bh(&af_blocked_mac_lock);
+	for (i = 0; i < MAX_AF_BLOCKED_MAC_HASH_SIZE; i++)
+	{
+		INIT_LIST_HEAD(&af_blocked_mac_htable[i]);
+	}
+	write_unlock_bh(&af_blocked_mac_lock);
+}
+
+void af_blocked_mac_flush(void)
+{
+	int i;
+	af_blocked_mac_node_t *p = NULL;
+	write_lock_bh(&af_blocked_mac_lock);
+	for (i = 0; i < MAX_AF_BLOCKED_MAC_HASH_SIZE; i++)
+	{
+		while (!list_empty(&af_blocked_mac_htable[i]))
+		{
+			p = list_first_entry(&af_blocked_mac_htable[i], af_blocked_mac_node_t, list);
+			list_del(&(p->list));
+			kfree(p);
+		}
+	}
+	write_unlock_bh(&af_blocked_mac_lock);
+}
+
+af_blocked_mac_node_t *af_blocked_mac_find(unsigned char *mac)
+{
+	af_blocked_mac_node_t *node = NULL;
+	unsigned int index = 0;
+
+	index = hash_mac(mac);
+	read_lock_bh(&af_blocked_mac_lock);
+	list_for_each_entry(node, &af_blocked_mac_htable[index], list)
+	{
+		if (0 == memcmp(node->mac, mac, 6))
+		{
+			read_unlock_bh(&af_blocked_mac_lock);
+			return node;
+		}
+	}
+	read_unlock_bh(&af_blocked_mac_lock);
+	return NULL;
+}
+
+af_blocked_mac_node_t *af_blocked_mac_add(unsigned char *mac)
+{
+	af_blocked_mac_node_t *node = NULL;
+	int index = 0;
+
+	node = (af_blocked_mac_node_t *)kmalloc(sizeof(af_blocked_mac_node_t), GFP_ATOMIC);
+	if (node == NULL)
+	{
+		return NULL;
+	}
+
+	memset(node, 0, sizeof(af_blocked_mac_node_t));
+	memcpy(node->mac, mac, MAC_ADDR_LEN);
+	index = hash_mac(mac);
+
+	AF_DEBUG("add blocked mac=" MAC_FMT "\n", MAC_ARRAY(node->mac));
+	write_lock_bh(&af_blocked_mac_lock);
+	list_add(&(node->list), &af_blocked_mac_htable[index]);
+	write_unlock_bh(&af_blocked_mac_lock);
+	return node;
+}
+
+int af_config_set_blocked_mac_list(cJSON *data_obj)
+{
+	int i;
+	cJSON *mac_arr = NULL;
+	u8 mac_hex[MAC_ADDR_LEN] = {0};
+	if (!data_obj)
+	{
+		AF_ERROR("data obj is null\n");
+		return -1;
+	}
+	mac_arr = cJSON_GetObjectItem(data_obj, "mac_list");
+	if (!mac_arr)
+	{
+		AF_ERROR("mac_list obj is null\n");
+		return -1;
+	}
+	af_blocked_mac_flush();
+	for (i = 0; i < cJSON_GetArraySize(mac_arr); i++)
+	{
+		cJSON *mac_obj = cJSON_GetArrayItem(mac_arr, i);
+		if (!mac_obj)
+			continue;
+		if (-1 == mac_to_hex(mac_obj->valuestring, mac_hex))
+			continue;
+		af_blocked_mac_add(mac_hex);
+	}
+	AF_DEBUG("## blocked mac num = %d\n", cJSON_GetArraySize(mac_arr));
 	return 0;
 }

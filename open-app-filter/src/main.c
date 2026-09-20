@@ -380,6 +380,12 @@ void af_load_global_config(af_global_config_t *config){
     else
         config->app_filter_mode = ret;
 
+    ret = af_uci_get_int_value(ctx, "appfilter.global.daily_limit_mode");
+    if (ret < 0)
+        config->daily_limit_mode = 0;
+    else
+        config->daily_limit_mode = ret;
+
     ret = af_uci_get_value(ctx, "appfilter.global.lan_ifname", lan_ifname, sizeof(lan_ifname));
 	if (ret < 0)
 		strncpy(config->lan_ifname, "br-lan", sizeof(config->lan_ifname) - 1);
@@ -545,6 +551,47 @@ int update_dynamic_used_time(af_time_config_t *t_config){
 	return 0;
 }
 
+static void sync_blocked_macs_to_kernel(void)
+{
+    static char last_json[4096] = {0};
+    char buf[4096] = {0};
+    int pos = 0;
+    int first = 1;
+    int i;
+    FILE *fp;
+
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+                    "{\"op\":%d,\"data\":{\"mac_list\":[",
+                    AF_CMD_SET_BLOCKED_MAC_LIST);
+
+    for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+        dev_node_t *node = dev_hash_table[i];
+        while (node) {
+            if (node->is_selected && node->blocked) {
+                if (!first)
+                    pos += snprintf(buf + pos, sizeof(buf) - pos, ",");
+                pos += snprintf(buf + pos, sizeof(buf) - pos,
+                                "\"%s\"", node->mac);
+                first = 0;
+            }
+            node = node->next;
+        }
+    }
+    pos += snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+
+    if (strcmp(buf, last_json) == 0)
+        return;
+
+    fp = fopen("/dev/appfilter", "w");
+    if (fp) {
+        fwrite(buf, 1, strlen(buf), fp);
+        fclose(fp);
+        LOG_INFO("sync blocked macs to kernel: %s\n", buf);
+    } else {
+        LOG_ERROR("open /dev/appfilter failed\n");
+    }
+    strncpy(last_json, buf, sizeof(last_json) - 1);
+}
 
 int af_check_time_period_limit(af_time_config_t *t_config) {
     int total_active_time = 0;
@@ -565,7 +612,12 @@ int af_check_time_period_limit(af_time_config_t *t_config) {
         g_af_status.match_time = 0;
         g_af_status.remain_time = 0;
         g_af_status.used_time = 0;
-        g_af_status.period_blocked = 0; 
+        g_af_status.period_blocked = 0;
+        for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+            dev_node_t *node = dev_hash_table[i];
+            while (node) { node->blocked = 0; node = node->next; }
+        }
+        sync_blocked_macs_to_kernel();
         return 0;
     }
     
@@ -595,55 +647,95 @@ int af_check_time_period_limit(af_time_config_t *t_config) {
         g_af_status.remain_time = 0;
         g_af_status.used_time = 0;
         g_af_status.period_blocked = 0;
+        for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+            dev_node_t *node = dev_hash_table[i];
+            while (node) { node->blocked = 0; node = node->next; }
+        }
+        sync_blocked_macs_to_kernel();
         return 0;
     }
     
     check_all_users_period_time();
     
-    for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-        dev_node_t *node = dev_hash_table[i];
-        while (node) {
-            if (node->is_selected) {
-                if (is_morning) {
-                    total_active_time += node->today_am_active_time;
-                    LOG_DEBUG("Selected user %s (online=%d): today_am_active_time=%d, total=%d\n", 
-                             node->mac, node->online, node->today_am_active_time, total_active_time);
-                } else {
-                    total_active_time += node->today_pm_active_time;
-                    LOG_DEBUG("Selected user %s (online=%d): today_pm_active_time=%d, total=%d\n", 
-                             node->mac, node->online, node->today_pm_active_time, total_active_time);
+    if (g_af_config.global.daily_limit_mode == 0) {
+        for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+            dev_node_t *node = dev_hash_table[i];
+            while (node) {
+                if (node->is_selected) {
+                    if (is_morning) {
+                        total_active_time += node->today_am_active_time;
+                        LOG_DEBUG("Selected user %s (online=%d): today_am_active_time=%d, total=%d\n", 
+                                 node->mac, node->online, node->today_am_active_time, total_active_time);
+                    } else {
+                        total_active_time += node->today_pm_active_time;
+                        LOG_DEBUG("Selected user %s (online=%d): today_pm_active_time=%d, total=%d\n", 
+                                 node->mac, node->online, node->today_pm_active_time, total_active_time);
+                    }
+                    if (node->online) {
+                        selected_user_count++;
+                    }
                 }
-                if (node->online) {
-                    selected_user_count++;
-                }
+                node->blocked = 0;
+                node = node->next;
             }
-            node = node->next;
         }
-    }
-    
-    g_af_status.used_time = total_active_time;
-    
-    int remain_time = max_allowed_time - total_active_time;
-    if (remain_time < 0) {
-        remain_time = 0;
-    }
-    g_af_status.remain_time = remain_time;
-    
-    LOG_DEBUG("Selected users count: %d, total_active_time=%d, max_allowed=%d, remain_time=%d\n", 
-             selected_user_count, total_active_time, max_allowed_time, remain_time);
-    
-    if (total_active_time >= max_allowed_time) {
+
+        g_af_status.used_time = total_active_time;
+
+        int remain_time = max_allowed_time - total_active_time;
+        if (remain_time < 0) {
+            remain_time = 0;
+        }
+        g_af_status.remain_time = remain_time;
+
+        sync_blocked_macs_to_kernel();
+
+        LOG_DEBUG("Share mode: selected users=%d, total_active_time=%d, max_allowed=%d, remain_time=%d\n", 
+                 selected_user_count, total_active_time, max_allowed_time, remain_time);
+
         g_af_status.match_time = 1;
-        g_af_status.period_blocked = 1; 
-        LOG_DEBUG("Period limit mode: enable filter (total time exceeded: %d >= %d)\n", 
-                 total_active_time, max_allowed_time);
-        return 1; 
+        if (total_active_time >= max_allowed_time) {
+            g_af_status.period_blocked = 1; 
+            LOG_DEBUG("Period limit mode: enable filter (total time exceeded: %d >= %d)\n", 
+                     total_active_time, max_allowed_time);
+            return 1; 
+        } else {
+            g_af_status.period_blocked = 0; 
+            LOG_DEBUG("Period limit mode: disable filter (total time: %d < %d, remain: %d)\n", 
+                     total_active_time, max_allowed_time, remain_time);
+            return 0; 
+        }
     } else {
+        int any_blocked = 0;
+
+        for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+            dev_node_t *node = dev_hash_table[i];
+            while (node) {
+                if (node->is_selected) {
+                    int device_used = is_morning ? node->today_am_active_time
+                                                 : node->today_pm_active_time;
+                    if (device_used >= max_allowed_time) {
+                        node->blocked = 1;
+                        any_blocked = 1;
+                        LOG_DEBUG("Independent mode: mac=%s %s used=%d >= limit=%d, block\n",
+                                  node->mac, is_morning ? "AM" : "PM", device_used, max_allowed_time);
+                    } else {
+                        node->blocked = 0;
+                    }
+                } else {
+                    node->blocked = 0;
+                }
+                node = node->next;
+            }
+        }
+
+        sync_blocked_macs_to_kernel();
+
         g_af_status.match_time = 1;
-        g_af_status.period_blocked = 0; 
-        LOG_DEBUG("Period limit mode: disable filter (total time: %d < %d, remain: %d)\n", 
-                 total_active_time, max_allowed_time, remain_time);
-        return 0; 
+        g_af_status.period_blocked = any_blocked;
+        g_af_status.remain_time = 0;
+        g_af_status.used_time = 0;
+        return 1;
     }
 }
 
