@@ -1486,7 +1486,12 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	client->update_jiffies = jiffies;
 	AF_CLIENT_UNLOCK_R();
 
-
+	if (af_blocked_mac_find(client->mac))
+	{
+		AF_LMT_INFO("blocked mac " MAC_FMT ", drop all packets\n",
+		            MAC_ARRAY(client->mac));
+		return NF_DROP;
+	}
 
 	if (ct->mark != 0)
 	{
@@ -1910,6 +1915,7 @@ static int __init app_filter_init(void)
 	af_register_dev();
 	af_mac_list_init();
 	af_whitelist_mac_init();
+	af_blocked_mac_init();
 
 	af_init_app_status();
 	init_af_client_procfs();
@@ -1942,6 +1948,7 @@ static void app_filter_fini(void)
 	af_clean_feature_list();
 	af_mac_list_flush();
 	af_whitelist_mac_flush();
+	af_blocked_mac_flush();
 	af_unregister_dev();
 	af_log_exit();
 	af_client_exit();
