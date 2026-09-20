@@ -44,35 +44,35 @@ THE SOFTWARE.
 
 typedef struct visit_info
 {
-    int appid;
-    u_int32_t first_time;
-    u_int32_t latest_time;
-    int action;
-    int expire; 
-    struct visit_info *next;
+	int appid;
+	u_int32_t first_time;
+	u_int32_t latest_time;
+	int action;
+	int expire; 
+	struct visit_info *next;
 } visit_info_t;
 
 typedef struct visit_stat
 {
-    u_int32_t total_time;
+	u_int32_t total_time;
 } visit_stat_t;
 
 typedef struct dev_node
 {
-    char mac[MAX_MAC_LEN];
-    char ip[MAX_IP_LEN];
+	char mac[MAX_MAC_LEN];
+	char ip[MAX_IP_LEN];
 	char ipv6[64];
-    char hostname[MAX_HOSTNAME_SIZE];
-    char nickname[MAX_NICKNAME_SIZE];
-    int online;
-    int expire;
-    u_int32_t offline_time;
-    u_int32_t online_time;
-    visit_info_t *visit_htable[MAX_VISIT_HASH_SIZE];
-    visit_stat_t stat[MAX_APP_TYPE][MAX_APP_ID_NUM]; // todo: list
-    char visiting_url[MAX_REPORT_URL_LEN];
-    int visiting_app;
-    int is_whitelist;
+	char hostname[MAX_HOSTNAME_SIZE];
+	char nickname[MAX_NICKNAME_SIZE];
+	int online;
+	int expire;
+	u_int32_t offline_time;
+	u_int32_t online_time;
+	visit_info_t *visit_htable[MAX_VISIT_HASH_SIZE];
+	visit_stat_t stat[MAX_APP_TYPE][MAX_APP_ID_NUM]; // todo: list
+	char visiting_url[MAX_REPORT_URL_LEN];
+	int visiting_app;
+	int is_whitelist;
 	u_int32_t up_rate;
 	u_int32_t down_rate;
 	u_int64_t today_up_bytes;
@@ -81,20 +81,21 @@ typedef struct dev_node
 	u_int32_t today_am_active_time;
 	u_int32_t today_pm_active_time;
 	int is_selected; 
-    struct dev_node *next;
+	int blocked;
+	struct dev_node *next;
 } dev_node_t;
 
 struct app_visit_info
 {
-    int app_id;
-    char app_name[32];
-    int total_time;
+	int app_id;
+	char app_name[32];
+	int total_time;
 };
 
 struct app_visit_stat_info
 {
-    int num;
-    struct app_visit_info visit_list[MAX_APP_STAT_NUM];
+	int num;
+	struct app_visit_info visit_list[MAX_APP_STAT_NUM];
 };
 typedef void (*iter_func)(void *arg, dev_node_t *dev);
 //todo:dev for each
