@@ -852,22 +852,26 @@ static int handle_get_app_filter_base(struct ubus_context *ctx, struct ubus_obje
     int record_enable = 0;
     int disable_quic = 0;
     int app_filter_mode = 0;
+    int daily_limit_mode = 0;
     enable = af_uci_get_int_value(uci_ctx, "appfilter.global.enable");
     work_mode = af_uci_get_int_value(uci_ctx, "appfilter.global.work_mode");
     record_enable = af_uci_get_int_value(uci_ctx, "appfilter.global.record_enable");
     disable_quic = af_uci_get_int_value(uci_ctx, "appfilter.global.disable_quic");
     app_filter_mode = af_uci_get_int_value(uci_ctx, "appfilter.global.app_filter_mode");
+    daily_limit_mode = af_uci_get_int_value(uci_ctx, "appfilter.global.daily_limit_mode");
     if (app_filter_mode < 0) {
         app_filter_mode = 0; // Default to specified apps mode
     }
-
+    if (daily_limit_mode < 0) {
+        daily_limit_mode = 0;
+    }
 
     json_object_object_add(data_obj, "enable", json_object_new_int(enable));
     json_object_object_add(data_obj, "work_mode", json_object_new_int(work_mode));
     json_object_object_add(data_obj, "record_enable", json_object_new_int(record_enable));
     json_object_object_add(data_obj, "disable_quic", json_object_new_int(disable_quic));
     json_object_object_add(data_obj, "app_filter_mode", json_object_new_int(app_filter_mode));
-
+    json_object_object_add(data_obj, "daily_limit_mode", json_object_new_int(daily_limit_mode));
 
     json_object_object_add(response, "data", data_obj);
     uci_free_context(uci_ctx);
@@ -898,6 +902,7 @@ static int handle_set_app_filter_base(struct ubus_context *ctx, struct ubus_obje
     struct json_object *work_mode_obj = json_object_object_get(req_obj, "work_mode");
     struct json_object *disable_quic_obj = json_object_object_get(req_obj, "disable_quic");
     struct json_object *app_filter_mode_obj = json_object_object_get(req_obj, "app_filter_mode");
+    struct json_object *daily_limit_mode_obj = json_object_object_get(req_obj, "daily_limit_mode");
     if (!enable_obj || !work_mode_obj) {
         printf("enable_obj or work_mode_obj is NULL\n");
         json_object_put(req_obj);
@@ -936,6 +941,10 @@ static int handle_set_app_filter_base(struct ubus_context *ctx, struct ubus_obje
     else
         af_uci_set_int_value(uci_ctx, "appfilter.global.app_filter_mode", 0);
 
+    if (daily_limit_mode_obj)
+        af_uci_set_int_value(uci_ctx, "appfilter.global.daily_limit_mode", json_object_get_int(daily_limit_mode_obj));
+    else
+        af_uci_set_int_value(uci_ctx, "appfilter.global.daily_limit_mode", 0);
 
     af_uci_commit(uci_ctx, "appfilter");
     reload_oaf_rule();
