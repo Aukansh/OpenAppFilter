@@ -46,6 +46,7 @@ static struct af_config_interface af_config_interfaces[] = {
 	{AF_CMD_CLEAN_APPID, af_config_clean_appid, "Clean App ID"},
 	{AF_CMD_SET_MAC_LIST, af_config_set_mac_list, "Set MAC List"},
 	{AF_CMD_SET_WHITELIST_MAC_LIST, af_config_set_whitelist_mac_list, "Set Whitelist MAC List"},
+	{AF_CMD_SET_BLOCKED_MAC_LIST, af_config_set_blocked_mac_list, "Set Blocked MAC List"},
 	{0, NULL, NULL} 
 };
 
