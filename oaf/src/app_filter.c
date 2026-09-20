@@ -1098,6 +1098,12 @@ static int match_app_filter_rule(int appid, af_client_info_t *client)
 	if (!match_app_filter_user(client))
 		return AF_FALSE;
 
+	if (g_daily_limit_mode == 1) {
+		if (!af_blocked_mac_find(client->mac)) {
+			return AF_FALSE;
+		}
+	}
+
 	// All apps mode: skip appid check, match user only
 	if (g_app_filter_mode == 1) {
 		return AF_TRUE;
@@ -1485,13 +1491,6 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	}
 	client->update_jiffies = jiffies;
 	AF_CLIENT_UNLOCK_R();
-
-	if (af_blocked_mac_find(client->mac))
-	{
-		AF_LMT_INFO("blocked mac " MAC_FMT ", drop all packets\n",
-		            MAC_ARRAY(client->mac));
-		return NF_DROP;
-	}
 
 	if (ct->mark != 0)
 	{

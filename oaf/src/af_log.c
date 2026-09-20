@@ -22,6 +22,7 @@ int g_feature_init = 0;
 char g_oaf_version[64] = AF_VERSION;
 int g_disable_quic = 0;
 int g_app_filter_mode = 0; // 0 = specified apps, 1 = all apps
+int g_daily_limit_mode = 0; // 0 = share total time, 1 = independent per device
 /* 
 	cat /proc/sys/oaf/debug
 */
@@ -127,6 +128,13 @@ static struct ctl_table oaf_table[] = {
 	{
 		.procname	= "app_filter_mode",
 		.data		= &g_app_filter_mode,
+		.maxlen 	= sizeof(int),
+		.mode		= 0666,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "daily_limit_mode",
+		.data		= &g_daily_limit_mode,
 		.maxlen 	= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,

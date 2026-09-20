@@ -776,6 +776,9 @@ void update_oaf_app_filter_mode_status(void){
     update_oaf_proc_value("app_filter_mode", g_af_config.global.app_filter_mode==1?"1":"0");
 }
 
+void update_oaf_daily_limit_mode_status(void){
+    update_oaf_proc_value("daily_limit_mode", g_af_config.global.daily_limit_mode == 1 ? "1" : "0");
+}
 
 int af_nl_clean_feature(void){
     af_msg_t msg;
@@ -902,6 +905,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
         update_oaf_record_status();
         update_oaf_disable_quic_status();
         update_oaf_app_filter_mode_status();
+		update_oaf_daily_limit_mode_status();
         g_oaf_config_change = 0;
     }
 
