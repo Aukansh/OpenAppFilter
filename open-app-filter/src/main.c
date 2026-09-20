@@ -551,7 +551,7 @@ int update_dynamic_used_time(af_time_config_t *t_config){
 	return 0;
 }
 
-static void sync_blocked_macs_to_kernel(void)
+void sync_blocked_macs_to_kernel(void)
 {
     static char last_json[4096] = {0};
     char buf[4096] = {0};
