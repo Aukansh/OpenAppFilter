@@ -127,7 +127,7 @@ void clear_device_app_statistics(void);
 
 void check_and_reset_today_active_time(dev_node_t *node);
 void reset_all_users_today_active_time(void);
-
+void reset_user_today_active_time(const char *mac);
 void reset_all_users_today_flow(void);
 
 void check_all_users_period_time(void);

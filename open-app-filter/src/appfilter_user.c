@@ -944,6 +944,25 @@ void reset_all_users_today_active_time(void)
     sync_blocked_macs_to_kernel();
 }
 
+void reset_user_today_active_time(const char *mac)
+{
+    dev_node_t *node;
+    if (!mac || !mac[0])
+        return;
+
+    node = find_dev_node((char *)mac);
+    if (!node) {
+        LOG_WARN("reset_user_today_active_time: mac %s not found\n", mac);
+        return;
+    }
+
+    LOG_DEBUG("Reset user active time: mac=%s, am=%d->0, pm=%d->0\n",
+              node->mac, node->today_am_active_time, node->today_pm_active_time);
+    node->today_am_active_time = 0;
+    node->today_pm_active_time = 0;
+    node->blocked = 0;
+    sync_blocked_macs_to_kernel();
+}
 
 void reset_all_users_today_flow(void)
 {
@@ -958,7 +977,6 @@ void reset_all_users_today_flow(void)
         }
     }
 }
-
 
 void check_all_users_period_time(void)
 {

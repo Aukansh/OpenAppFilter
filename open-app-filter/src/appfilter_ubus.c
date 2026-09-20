@@ -2400,6 +2400,20 @@ static int handle_cmd(struct ubus_context *ctx, struct ubus_object *obj,
         result_msg = "Successfully cleared all users' active time";
         ret = 0;
         printf("handle_cmd: cleared all users' active time\n");
+    } else if (strcmp(action, "clear_user_active_time") == 0) {
+        // Clear a specific user's today active time
+        struct json_object *mac_obj = json_object_object_get(req_obj, "mac");
+        if (!mac_obj) {
+            result_msg = "Missing mac parameter";
+            ret = -1;
+            printf("handle_cmd: clear_user_active_time requires mac\n");
+        } else {
+            const char *mac = json_object_get_string(mac_obj);
+            reset_user_today_active_time(mac);
+            result_msg = "Successfully cleared user active time";
+            ret = 0;
+            printf("handle_cmd: cleared active time for mac=%s\n", mac);
+        }
     } else if (strcmp(action, "clear_offline_users") == 0) {
         // Clear all offline users
         flush_offline_users();
