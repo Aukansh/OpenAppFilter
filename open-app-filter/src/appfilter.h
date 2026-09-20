@@ -121,6 +121,6 @@ typedef struct af_run_time_status{
 	int period_blocked;
 }af_run_time_status_t;
 
-
+void sync_blocked_macs_to_kernel(void);
 extern af_config_t g_af_config;
 #endif
