@@ -9,6 +9,7 @@ enum AF_CONFIG_CMD
 	AF_CMD_CLEAN_APPID,
 	AF_CMD_SET_MAC_LIST,
 	AF_CMD_SET_WHITELIST_MAC_LIST,
+	AF_CMD_SET_BLOCKED_MAC_LIST,
 };
 
 typedef int (*af_config_handler_t)(cJSON *data);
@@ -28,6 +29,6 @@ int af_config_del_appid(cJSON *data);
 int af_config_clean_appid(cJSON *data);
 int af_config_set_mac_list(cJSON *data);
 int af_config_set_whitelist_mac_list(cJSON *data);
-
+int af_config_set_blocked_mac_list(cJSON *data);
 
 #endif
