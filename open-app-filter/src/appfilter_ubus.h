@@ -19,7 +19,10 @@
   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
   THE SOFTWARE.
 */
+
 #ifndef __APPFILTER_UBUS_H__
 #define __APPFILTER_UBUS_H__
+
 int appfilter_ubus_init(void);
+
 #endif

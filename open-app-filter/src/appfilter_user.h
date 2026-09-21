@@ -133,5 +133,4 @@ void reset_all_users_today_flow(void);
 void check_all_users_period_time(void);
 void update_dev_online_status(void);
 
-
 #endif
