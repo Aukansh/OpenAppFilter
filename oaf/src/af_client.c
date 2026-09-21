@@ -249,7 +249,6 @@ static void flush_expired_visit_info(af_client_info_t *node)
 
 		if (cur_timep - node->visit_info[i].latest_time > timeout)
 		{
-			// 3?��o?��??3y????
 			memset(&node->visit_info[i], 0x0, sizeof(app_visit_info_t));
 			count++;
 		}
@@ -573,19 +572,19 @@ static struct nf_hook_ops af_client_ops[] = {
 static void client_timer_handler(struct timer_list *t)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
-    af_client_info_t *client = from_timer(client, t, client_timer);
+	af_client_info_t *client = from_timer(client, t, client_timer);
 #else
-    af_client_info_t *client = timer_container_of(client, t, client_timer);
+	af_client_info_t *client = timer_container_of(client, t, client_timer);
 #endif
 #else
 static void client_timer_handler(unsigned long data)
 {
-    af_client_info_t *client = (af_client_info_t *)data;
+	af_client_info_t *client = (af_client_info_t *)data;
 #endif
-    if (!client) {
-        AF_ERROR("client timer handler: invalid client\n");
-        return;
-    }
+	if (!client) {
+		AF_ERROR("client timer handler: invalid client\n");
+		return;
+	}
 	
 	if (client->timer_count >= 30) {
 		__af_visit_info_report(client);
@@ -594,37 +593,37 @@ static void client_timer_handler(unsigned long data)
 
 	af_update_client_status(client);
 	client->timer_count++;
-    mod_timer(&client->client_timer, jiffies + HZ * 2); 
+	mod_timer(&client->client_timer, jiffies + HZ * 2); 
 }
 
  void init_client_timer(af_client_info_t *client)
 {
-    if (!client) {
-        AF_ERROR("init_client_timer: invalid client\n");
-        return;
-    }
-    
+	if (!client) {
+		AF_ERROR("init_client_timer: invalid client\n");
+		return;
+	}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
-    timer_setup(&client->client_timer, client_timer_handler, 0);
+	timer_setup(&client->client_timer, client_timer_handler, 0);
 #else
-    setup_timer(&client->client_timer, client_timer_handler, (unsigned long)client);
+	setup_timer(&client->client_timer, client_timer_handler, (unsigned long)client);
 #endif
-    
-    mod_timer(&client->client_timer, jiffies + HZ * 1); 
+
+	mod_timer(&client->client_timer, jiffies + HZ * 1); 
 }
 
  void stop_client_timer(af_client_info_t *client)
 {
 	
-    if (!client) {
-        AF_ERROR("stop_client_timer: invalid client\n");
-        return;
-    }
-    
+	if (!client) {
+		AF_ERROR("stop_client_timer: invalid client\n");
+		return;
+	}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
-    del_timer_sync(&client->client_timer);
+	del_timer_sync(&client->client_timer);
 #else
-    timer_delete_sync(&client->client_timer);
+	timer_delete_sync(&client->client_timer);
 #endif
 }
 

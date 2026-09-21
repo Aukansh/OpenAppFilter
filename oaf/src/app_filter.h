@@ -76,8 +76,8 @@ typedef struct af_msg{
 }af_msg_t;
 
 struct af_msg_hdr{
-    int magic;
-    int len;
+	int magic;
+	int len;
 };
 
 enum e_http_method{

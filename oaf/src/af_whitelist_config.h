@@ -7,13 +7,13 @@
 #define MAX_AF_BLOCKED_MAC_HASH_SIZE   64
 
 typedef struct af_whitelist_mac_node{
-    struct list_head list;
-    unsigned char mac[MAC_ADDR_LEN];
+	struct list_head list;
+	unsigned char mac[MAC_ADDR_LEN];
 }af_whitelist_mac_node_t;
 
 typedef struct af_blocked_mac_node{
-    struct list_head list;
-    unsigned char mac[MAC_ADDR_LEN];
+	struct list_head list;
+	unsigned char mac[MAC_ADDR_LEN];
 }af_blocked_mac_node_t;
 
 void af_whitelist_mac_init(void);

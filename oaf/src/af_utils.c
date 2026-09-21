@@ -23,20 +23,20 @@ u_int32_t af_get_timestamp_sec(void)
 }
 
 int k_atoi(const char *str) {
-    int result = 0;
+	int result = 0;
 
-    // Skip whitespace
-    while (*str == ' ' || *str == '\t') {
-        str++;
-    }
+	// Skip whitespace
+	while (*str == ' ' || *str == '\t') {
+		str++;
+	}
 
-    // Convert characters to integer
-    while (*str >= '0' && *str <= '9') {
-        result = result * 10 + (*str - '0');
-        str++;
-    }
+	// Convert characters to integer
+	while (*str >= '0' && *str <= '9') {
+		result = result * 10 + (*str - '0');
+		str++;
+	}
 
-    return result;
+	return result;
 }
 
 char *k_trim(char *s)
@@ -85,37 +85,38 @@ void dump_str(char *name, unsigned char *p, int len)
 }
 static int isprint_char(unsigned char c)
 {
-    if (c >= 0x20 && c <= 0x7e)
-        return 1;
-    else
-        return 0;
+	if (c >= 0x20 && c <= 0x7e) {
+		return 1;
+	} else {
+		return 0;
+	}
 }
 
-void print_hex_ascii(const unsigned char *data, size_t size) {
-    size_t i, j;
+void print_hex_ascii(const unsigned char *data, size_t size)
+{
+	size_t i, j;
 
-    for (i = 0; i < size; i += 16) {
-        printk(KERN_CONT"%08lx  ", (unsigned long)i);
-        for (j = 0; j < 16; ++j) {
-            if (i + j < size) {
-                printk(KERN_CONT"%02x ", data[i + j]);
-            } else {
-                printk(KERN_CONT"   "); 
-            }   
-        }   
+	for (i = 0; i < size; i += 16) {
+		printk(KERN_CONT"%08lx  ", (unsigned long)i);
+		for (j = 0; j < 16; ++j) {
+			if (i + j < size) {
+				printk(KERN_CONT"%02x ", data[i + j]);
+			} else {
+				printk(KERN_CONT"   "); 
+			}
+		}
 
-        printk(KERN_CONT" ");
+		printk(KERN_CONT" ");
+		for (j = 0; j < 16; ++j) {
+			if (i + j < size) {
+				unsigned char c = data[i + j]; 
+				printk(KERN_CONT"%c", isprint_char(c) ? c : '.'); 
+			}
+		}
 
-        for (j = 0; j < 16; ++j) {
-            if (i + j < size) {
-                unsigned char c = data[i + j]; 
-                printk(KERN_CONT"%c", isprint_char(c) ? c : '.'); 
-            }   
-        }   
-
-        printk(KERN_CONT"\n");
-    }   
-    printk(KERN_CONT"---------------------------------------\n");
+		printk(KERN_CONT"\n");
+	}
+	printk(KERN_CONT"---------------------------------------\n");
 }
 
 

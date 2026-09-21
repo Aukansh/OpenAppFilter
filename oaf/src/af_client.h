@@ -58,10 +58,10 @@ typedef struct app_visit_info
 } app_visit_info_t;
 
 typedef struct visiting_info{
-    int visiting_app;
-    int app_time;
-    char visiting_url[MAX_REPORT_URL_LEN];
-    int url_time;
+	int visiting_app;
+	int app_time;
+	char visiting_url[MAX_REPORT_URL_LEN];
+	int url_time;
 }visiting_info_t;
 
 typedef struct af_client_info

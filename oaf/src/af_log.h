@@ -16,9 +16,9 @@ extern int g_daily_limit_mode;
 extern char g_lan_ifname[64];
 extern int g_tcp_rst;
 #define LOG(level, fmt, ...) do { \
-    if ((level) <= af_log_lvl) { \
-        printk(fmt, ##__VA_ARGS__); \
-    } \
+	if ((level) <= af_log_lvl) { \
+		printk(fmt, ##__VA_ARGS__); \
+	} \
 } while (0)
 
 #define LLOG(level, fmt, ...) do { \

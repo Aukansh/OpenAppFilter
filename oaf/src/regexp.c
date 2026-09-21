@@ -159,9 +159,9 @@ static RE* compile(char *regexp)
 }
 
 #define MATCH_ONE(reg, text) \
-   	(reg->type == DOT || in_list(*text, reg) || *text == reg->ch)
+	(reg->type == DOT || in_list(*text, reg) || *text == reg->ch)
 #define MATCH_ONE_P(reg, text) \
-   	(in_list(*text++, reg) || *(text - 1) == reg->ch || reg->type == DOT)
+	(in_list(*text++, reg) || *(text - 1) == reg->ch || reg->type == DOT)
 
 static int matchhere(RE *regexp, char *text);
 

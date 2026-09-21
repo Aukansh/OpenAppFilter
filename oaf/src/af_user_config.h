@@ -4,8 +4,8 @@
 #include "af_utils.h"
 
 typedef struct af_mac_node {
-    struct list_head list;
-    unsigned char mac[MAC_ADDR_LEN];
+	struct list_head list;
+	unsigned char mac[MAC_ADDR_LEN];
 }af_mac_node_t;
 
 void af_mac_list_init(void);
