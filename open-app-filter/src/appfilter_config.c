@@ -23,6 +23,9 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <pthread.h>
+#include <time.h>
 #include "appfilter_config.h"
 #include "appfilter.h"
 #include <uci.h>
@@ -35,6 +38,60 @@ char CLASS_NAME_TABLE[MAX_APP_TYPE][MAX_CLASS_NAME_LEN];
 const char *config_path = "./config";
 static struct uci_context *uci_ctx = NULL;
 static struct uci_package *uci_appfilter;
+
+static pthread_mutex_t af_log_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void af_log(LogLevel level, const char *format, ...)
+{
+	FILE *log_file;
+	time_t now;
+	struct tm *t;
+	char time_str[20];
+	const char *level_str;
+	va_list args;
+
+	if (level > current_log_level)
+		return;
+
+	pthread_mutex_lock(&af_log_mutex);
+	log_file = fopen(LOG_FILE_PATH, "a");
+	if (!log_file) {
+		perror("Failed to open log file");
+		pthread_mutex_unlock(&af_log_mutex);
+		return;
+	}
+
+	now = time(NULL);
+	t = localtime(&now);
+	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);
+
+	switch (level) {
+	case LOG_LEVEL_DEBUG:
+		level_str = "DEBUG";
+		break;
+	case LOG_LEVEL_INFO:
+		level_str = "INFO";
+		break;
+	case LOG_LEVEL_WARN:
+		level_str = "WARN";
+		break;
+	case LOG_LEVEL_ERROR:
+		level_str = "ERROR";
+		break;
+	default:
+		level_str = "UNKNOWN";
+		break;
+	}
+
+	fprintf(log_file, "[%s] [%s] ", time_str, level_str);
+
+	va_start(args, format);
+	vfprintf(log_file, format, args);
+	va_end(args);
+
+	fclose(log_file);
+	pthread_mutex_unlock(&af_log_mutex);
+}
 
 int af_uci_get_int_value(struct uci_context *ctx, char *key)
 {
