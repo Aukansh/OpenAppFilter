@@ -43,8 +43,7 @@ nf_client_list_init(void)
 {
 	int i;
 	AF_CLIENT_LOCK_W();
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++)
-	{
+	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
 		INIT_LIST_HEAD(&af_client_list_table[i]);
 	}
 	AF_CLIENT_UNLOCK_W();
@@ -56,24 +55,32 @@ nf_client_list_clear(void)
 {
 	int i;
 	af_client_info_t *p = NULL;
+	LIST_HEAD(pending);
 	char mac_str[32] = {0};
 
 	AF_DEBUG("clean list\n");
 	AF_CLIENT_LOCK_W();
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++)
-	{
-		while (!list_empty(&af_client_list_table[i]))
-		{
+	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
+		while (!list_empty(&af_client_list_table[i])) {
 			p = list_first_entry(&af_client_list_table[i], af_client_info_t, hlist);
-			memset(mac_str, 0x0, sizeof(mac_str));
-			sprintf(mac_str, MAC_FMT, MAC_ARRAY(p->mac));
-			AF_DEBUG("clean mac:%s\n", mac_str);
-			stop_client_timer(p);
 			list_del(&(p->hlist));
-			kfree(p);
+			list_add_tail(&(p->hlist), &pending);
 		}
 	}
+	total_client = 0;
 	AF_CLIENT_UNLOCK_W();
+
+	/* del_timer_sync() may sleep, so it must not be called with the
+	 * write lock held. */
+	while (!list_empty(&pending)) {
+		p = list_first_entry(&pending, af_client_info_t, hlist);
+		list_del(&(p->hlist));
+		memset(mac_str, 0x0, sizeof(mac_str));
+		sprintf(mac_str, MAC_FMT, MAC_ARRAY(p->mac));
+		AF_DEBUG("clean mac:%s\n", mac_str);
+		stop_client_timer(p);
+		kfree(p);
+	}
 }
 
 void af_client_list_reset_report_num(void)
@@ -81,10 +88,8 @@ void af_client_list_reset_report_num(void)
 	int i;
 	af_client_info_t *node = NULL;
 	AF_CLIENT_LOCK_W();
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++)
-	{
-		list_for_each_entry(node, &af_client_list_table[i], hlist)
-		{
+	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
+		list_for_each_entry(node, &af_client_list_table[i], hlist) {
 			node->report_count = 0;
 		}
 	}
@@ -93,10 +98,11 @@ void af_client_list_reset_report_num(void)
 
 static int get_mac_hash_code(unsigned char *mac)
 {
-	if (!mac)
+	if (!mac) {
 		return 0;
-	else
+	} else {
 		return mac[5] & (MAX_AF_CLIENT_HASH_SIZE - 1);
+	}
 }
 
 af_client_info_t *find_af_client(unsigned char *mac)
@@ -105,10 +111,8 @@ af_client_info_t *find_af_client(unsigned char *mac)
 	unsigned int index;
 
 	index = get_mac_hash_code(mac);
-	list_for_each_entry(node, &af_client_list_table[index], hlist)
-	{
-		if (0 == memcmp(node->mac, mac, 6))
-		{
+	list_for_each_entry(node, &af_client_list_table[index], hlist) {
+		if (0 == memcmp(node->mac, mac, 6)) {
 			return node;
 		}
 	}
@@ -131,12 +135,9 @@ af_client_info_t *find_af_client_by_ip(unsigned int ip)
 	af_client_info_t *node;
 	int i;
 
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++)
-	{
-		list_for_each_entry(node, &af_client_list_table[i], hlist)
-		{
-			if (node->ip == ip)
-			{
+	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
+		list_for_each_entry(node, &af_client_list_table[i], hlist) {
+			if (node->ip == ip) {
 				AF_LMT_DEBUG("match node->ip=%pI4, ip=%pI4\n", &node->ip, &ip);
 				return node;
 			}
@@ -150,12 +151,9 @@ af_client_info_t *find_af_client_by_ipv6(struct in6_addr *ipv6)
 	int i;
 	char addr_str[64] = {0};
 
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++)
-	{
-		list_for_each_entry(node, &af_client_list_table[i], hlist)
-		{
-			if (ipv6_addr_equal(&node->ipv6, ipv6))
-			{
+	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
+		list_for_each_entry(node, &af_client_list_table[i], hlist) {
+			if (ipv6_addr_equal(&node->ipv6, ipv6)) {
 				AF_INFO("match node->ipv6=%s\n", ipv6_to_str(&node->ipv6, addr_str));
 				return node;
 			}
@@ -170,8 +168,7 @@ nf_client_add(unsigned char *mac)
 	int index = 0;
 
 	node = (af_client_info_t *)kmalloc(sizeof(af_client_info_t), GFP_ATOMIC);
-	if (node == NULL)
-	{
+	if (node == NULL) {
 		AF_ERROR("kmalloc failed\n");
 		return NULL;
 	}
@@ -196,26 +193,36 @@ nf_client_add(unsigned char *mac)
 void check_client_expire(void)
 {
 	af_client_info_t *node;
+	af_client_info_t *victim = NULL;
 	int i;
 	AF_CLIENT_LOCK_W();
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++)
-	{
-		list_for_each_entry(node, &af_client_list_table[i], hlist)
-		{
+	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
+		list_for_each_entry(node, &af_client_list_table[i], hlist) {
 			AF_DEBUG("mac:" MAC_FMT " update:%lu interval:%lu\n", MAC_ARRAY(node->mac),
 					 node->update_jiffies, (jiffies - node->update_jiffies) / HZ);
-			if (jiffies > (node->update_jiffies + MAX_CLIENT_ACTIVE_TIME * HZ))
-			{
-				AF_INFO("del client:" MAC_FMT "\n", MAC_ARRAY(node->mac));
-				stop_client_timer(node);
-				list_del(&(node->hlist));
-				kfree(node);
-				AF_CLIENT_UNLOCK_W();
-				return;
+			if (jiffies > (node->update_jiffies + MAX_CLIENT_ACTIVE_TIME * HZ)) {
+				victim = node;
+				break;
 			}
+		}
+		if (victim) {
+			break;
+		}
+	}
+	if (victim) {
+		list_del(&(victim->hlist));
+		if (total_client) {
+			total_client--;
 		}
 	}
 	AF_CLIENT_UNLOCK_W();
+
+	/* del_timer_sync() must run outside the write lock. */
+	if (victim) {
+		AF_INFO("del client:" MAC_FMT "\n", MAC_ARRAY(victim->mac));
+		stop_client_timer(victim);
+		kfree(victim);
+	}
 }
 
 #define MAX_EXPIRED_VISIT_INFO_COUNT 10
@@ -226,29 +233,23 @@ static void flush_expired_visit_info(af_client_info_t *node)
 	u_int32_t cur_timep = 0;
 	int timeout = 0;
 	cur_timep = af_get_timestamp_sec();
-	for (i = 0; i < MAX_RECORD_APP_NUM; i++)
-	{
-		if (node->visit_info[i].app_id == 0)
-		{
+	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
+		if (node->visit_info[i].app_id == 0) {
 			return;
 		}
 	}
-	for (i = 0; i < MAX_RECORD_APP_NUM; i++)
-	{
-		if (count >= MAX_EXPIRED_VISIT_INFO_COUNT)
+	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
+		if (count >= MAX_EXPIRED_VISIT_INFO_COUNT) {
 			break;
-
-		if (node->visit_info[i].total_num > 3)
-		{
-			timeout = 180;
 		}
-		else
-		{
+
+		if (node->visit_info[i].total_num > 3) {
+			timeout = 180;
+		} else {
 			timeout = 60;
 		}
 
-		if (cur_timep - node->visit_info[i].latest_time > timeout)
-		{
+		if (cur_timep - node->visit_info[i].latest_time > timeout) {
 			memset(&node->visit_info[i], 0x0, sizeof(app_visit_info_t));
 			count++;
 		}
@@ -269,8 +270,7 @@ static int __af_visit_info_report(af_client_info_t *node)
 	flush_expired_visit_info(node);
 
 	root_obj = cJSON_CreateObject();
-	if (!root_obj)
-	{
+	if (!root_obj) {
 		AF_ERROR("create json obj failed");
 		return 0;
 	}
@@ -284,10 +284,10 @@ static int __af_visit_info_report(af_client_info_t *node)
 	cJSON_AddNumberToObject(root_obj, "active", node->active);
 
 	visit_info_array = cJSON_CreateArray();
-	for (i = 0; i < MAX_RECORD_APP_NUM; i++)
-	{
-		if (node->visit_info[i].app_id == 0)
+	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
+		if (node->visit_info[i].app_id == 0) {
 			continue;
+		}
 		count++;
 		visit_obj = cJSON_CreateObject();
 		cJSON_AddNumberToObject(visit_obj, "appid", node->visit_info[i].app_id);
@@ -317,12 +317,9 @@ static int __af_visit_info_report(af_client_info_t *node)
 
 static inline int get_packet_dir(struct net_device *in)
 {
-	if (strstr(in->name, g_lan_ifname))
-	{
+	if (strstr(in->name, g_lan_ifname)) {
 		return PKT_DIR_UP;
-	}
-	else
-	{
+	} else {
 		return PKT_DIR_DOWN;
 	}
 }
@@ -353,8 +350,7 @@ static void af_update_client_status(af_client_info_t *node)
 		node->active_time++;
 		node->inactive_time = 0;
 		node->active = 1;
-	}
-	else{
+	} else{
 		node->inactive_time++;
 		node->active_time = 0;
 		if (node->active && node->inactive_time > 30){
@@ -370,8 +366,7 @@ static u_int32_t af_client_hook(void *priv,
 								const struct nf_hook_state *state)
 {
 #else
-static u_int32_t af_client_hook(unsigned int hook,
-								struct sk_buff *skb,
+static u_int32_t af_client_hook(unsigned int hook, struct sk_buff *skb,
 								const struct net_device *in,
 								const struct net_device *out,
 								int (*okfn)(struct sk_buff *))
@@ -382,7 +377,6 @@ static u_int32_t af_client_hook(unsigned int hook,
 	af_client_info_t *nfc = NULL;
 	int pkt_dir = 0;
 	struct iphdr *iph = NULL;
-	unsigned int ip = 0;
 	struct ipv6hdr *ip6h = NULL;
 	enum ip_conntrack_info ctinfo;
 
@@ -394,39 +388,37 @@ static u_int32_t af_client_hook(unsigned int hook,
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
-	if (!skb->dev)
+	if (!skb->dev) {
 		return NF_ACCEPT;
+	}
 
 	pkt_dir = get_packet_dir(skb->dev);
 #else
-	if (!in)
-	{
+	if (!in) {
 		AF_ERROR("in is NULL\n");
 		return NF_ACCEPT;
 	}
 	pkt_dir = get_packet_dir(in);
 #endif
 
-	if (PKT_DIR_UP != pkt_dir)
+	if (PKT_DIR_UP != pkt_dir) {
 		return NF_ACCEPT;
+	}
 
 	ethhdr = eth_hdr(skb);
-	if (ethhdr)
-	{
+	if (ethhdr) {
 		memcpy(smac, ethhdr->h_source, ETH_ALEN);
-	}
-	else
-	{
+	} else {
 		memcpy(smac, &skb->cb[40], ETH_ALEN);
 	}
 
 
 	AF_CLIENT_LOCK_W();
 	nfc = find_af_client(smac);
-	if (!nfc)
-	{
-		if (skb->dev)
-			AF_DEBUG("from dev:%s %pI4", skb->dev->name, &ip);
+	if (!nfc) {
+		if (skb->dev) {
+			AF_DEBUG("from dev:%s\n", skb->dev->name);
+		}
 		nfc = nf_client_add(smac);
 	}
 
@@ -438,8 +430,7 @@ static u_int32_t af_client_hook(unsigned int hook,
 					MAC_ARRAY(nfc->mac), &nfc->ip, &iph->saddr);
 				nfc->ip = iph->saddr;
 			}
-		}
-		else if (skb->protocol == htons(ETH_P_IPV6)) {
+		} else if (skb->protocol == htons(ETH_P_IPV6)) {
 			ip6h = ipv6_hdr(skb);
 			if (ip6h && !ipv6_addr_equal(&nfc->ipv6, &ip6h->saddr)) {
 				nfc->ipv6 = ip6h->saddr;
@@ -476,50 +467,47 @@ static u_int32_t af_client_hook2(unsigned int hook,
 	enum ip_conntrack_info ctinfo;
 
 	struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
-	if (ct == NULL)
-	{
+	if (ct == NULL) {
 		return NF_ACCEPT;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
-	if (!skb->dev)
+	if (!skb->dev) {
 		return NF_ACCEPT;
+	}
 
 	pkt_dir = get_packet_dir(skb->dev);
 #else
-	if (!in)
-	{
+	if (!in) {
 		AF_ERROR("in is NULL\n");
 		return NF_ACCEPT;
 	}
 	pkt_dir = get_packet_dir(in);
 #endif
-	if (!skb->dev)
-	{
+	if (!skb->dev) {
 		return NF_ACCEPT;
 	}
 
 
-	if (PKT_DIR_DOWN != pkt_dir)
+	if (PKT_DIR_DOWN != pkt_dir) {
 		return NF_ACCEPT;
+	}
 
 	AF_CLIENT_LOCK_R();
 	
 	if (skb->protocol == htons(ETH_P_IP)) {
 		iph = ip_hdr(skb);
 		nfc = find_af_client_by_ip(iph->daddr);
-	}
-	else if (skb->protocol == htons(ETH_P_IPV6)) {
+	} else if (skb->protocol == htons(ETH_P_IPV6)) {
 		ip6h = ipv6_hdr(skb);
 		nfc = find_af_client_by_ipv6(&ip6h->daddr);
 		if (nfc){
 			AF_LMT_DEBUG("found ipv6 %pI6 client\n", &ip6h->daddr);
-		}
-		else{
+		} else{
 			AF_LMT_DEBUG("not found ipv6 %pI6 client\n", &ip6h->daddr);
 		}
 	}
-	if (nfc){
+	if (nfc) {
 		nfc->flow.down_bytes += skb->len;
 		nfc->flow.down_pkts++;
 	}
