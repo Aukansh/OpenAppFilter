@@ -724,16 +724,55 @@ static int handle_get_app_filter(struct ubus_context *ctx, struct ubus_object *o
 	return 0;
 }
 
+/*
+ * POSIX shell single-quote escape: each embedded single quote is turned into
+ * the sequence  '\''  (close quote, literal quote, reopen quote).
+ * Worst case output length is 4x the input length plus a NUL.
+ */
+static void shell_escape_single(const char *src, char *dst, size_t dst_len)
+{
+	size_t j = 0;
+
+	if (!src || !dst || dst_len == 0) {
+		return;
+	}
+
+	for (size_t i = 0; src[i] != '\0' && j + 5 < dst_len; i++) {
+		if (src[i] == '\'') {
+			memcpy(dst + j, "'\\''", 4);
+			j += 4;
+		} else {
+			dst[j++] = src[i];
+		}
+	}
+	dst[j] = '\0';
+}
+
 void af_forward_msg_to_agent(char *api, char *msg_str, int msg_len)
 {
-	if (!api || !msg_str || !msg_len)
+	if (!api || !msg_str || !msg_len) {
 		return;
-	char *cmd_buf = (char *)malloc(msg_len + 128);
-	if (!cmd_buf)
+	}
+
+	/* msg_str is caller-controlled; escape it before interpolating into the
+	 * shell command to prevent command injection through embedded quotes. */
+	size_t esc_len = (size_t)msg_len * 5 + 1;
+	char *escaped = (char *)malloc(esc_len);
+	char *cmd_buf = (char *)malloc(esc_len + 128);
+
+	if (!escaped || !cmd_buf) {
+		free(escaped);
+		free(cmd_buf);
 		return;
-	sprintf(cmd_buf, "ubus -t 2 call oaf_agent %s '%s'", api, msg_str);
+	}
+
+	shell_escape_single(msg_str, escaped, esc_len);
+	/* api is an internal constant (e.g. "set_app_filter_time"), safe as-is. */
+	snprintf(cmd_buf, esc_len + 128, "ubus -t 2 call oaf_agent %s '%s'", api, escaped);
 	printf("exec %s\n", cmd_buf);
 	system(cmd_buf);
+
+	free(escaped);
 	free(cmd_buf);
 }
 
