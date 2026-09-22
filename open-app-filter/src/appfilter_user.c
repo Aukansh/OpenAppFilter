@@ -44,8 +44,9 @@ unsigned int hash_mac(unsigned char *mac)
 	unsigned int hash = 0;
 	int i;
 
-	if (!mac)
+	if (!mac) {
 		return 0;
+	}
 	for (i = 0; mac[i] != '\0' && i < MAX_MAC_LEN; i++)
 		hash = hash * 31 + mac[i];
 	return hash & (MAX_DEV_NODE_HASH_SIZE - 1);
@@ -89,7 +90,7 @@ dev_node_t *add_dev_node(char *mac)
 	if (!node)
 		return NULL;
 	strncpy(node->mac, mac, sizeof(node->mac));
-	node->online = 1;
+	node->online = 0;
 	node->online_time = get_timestamp();
 	if (dev_hash_table[hash] == NULL) {
 		dev_hash_table[hash] = node;
