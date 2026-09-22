@@ -78,7 +78,7 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 	}
 
 	struct nlmsghdr *h = (struct nlmsghdr *)buf;
-	if (h->nlmsg_len < sizeof(struct nlmsghdr) ||
+	if (h->nlmsg_len < sizeof(struct nlmsghdr) + sizeof(struct af_msg_hdr) ||
 	    (int)h->nlmsg_len > ret) {
 		printf("netlink invalid nlmsg_len=%u (ret=%d)\n",
 		       h->nlmsg_len, ret);
