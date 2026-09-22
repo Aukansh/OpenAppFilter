@@ -71,7 +71,20 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 		return;
 	}
 
+	/* Never dereference anything past ret bytes. */
+	if (ret < (int)sizeof(struct nlmsghdr)) {
+		printf("netlink short read: %d bytes\n", ret);
+		return;
+	}
+
 	struct nlmsghdr *h = (struct nlmsghdr *)buf;
+	if (h->nlmsg_len < sizeof(struct nlmsghdr) ||
+	    (int)h->nlmsg_len > ret) {
+		printf("netlink invalid nlmsg_len=%u (ret=%d)\n",
+		       h->nlmsg_len, ret);
+		return;
+	}
+
 	char *kmsg = (char *)NLMSG_DATA(h);
 	struct af_msg_hdr *af_hdr = (struct af_msg_hdr *)kmsg;
 	if (af_hdr->magic != 0xa0b0c0d0) {
@@ -106,30 +119,36 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 
 	if (!node) {
 		node = add_dev_node(mac);
-		if (!node)
+		if (!node) {
 			goto EXIT;
+		}
 	}
 
 	struct json_object *ip_obj = json_object_object_get(root, "ip");
-	if (ip_obj)
+	if (ip_obj) {
 		strncpy(node->ip, json_object_get_string(ip_obj), sizeof(node->ip));
+	}
 
 	struct json_object *active_obj = json_object_object_get(root, "active");
-	if (active_obj)
+	if (active_obj) {
 		node->active = json_object_get_int(active_obj);
+	}
 
 	struct json_object *up_flow_obj = json_object_object_get(root, "up_flow");
 	struct json_object *down_flow_obj = json_object_object_get(root, "down_flow");
 
-	if (up_flow_obj)
+	if (up_flow_obj) {
 		node->today_up_bytes += (unsigned long long)json_object_get_int64(up_flow_obj) * 1024;
+	}
 
-	if (down_flow_obj)
+	if (down_flow_obj) {
 		node->today_down_bytes += (unsigned long long)json_object_get_int64(down_flow_obj) * 1024;
+	}
 
 	struct json_object *visit_array = json_object_object_get(root, "visit_info");
-	if (!visit_array)
+	if (!visit_array) {
 		goto EXIT;
+	}
 
 	for (int i = 0; i < json_object_array_length(visit_array); i++) {
 		struct json_object *visit_obj = json_object_array_get_idx(visit_array, i);
@@ -150,8 +169,9 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 
 		int type = appid / 1000;
 		int id = appid % 1000;
-		if (id <= 0 || type <= 0)
+		if (id <= 0 || type <= 0) {
 			continue;
+		}
 		node->stat[type - 1][id - 1].total_time += REPORT_INTERVAL_SECS;
 		int hash = hash_appid(appid);
 		visit_info_t *head = node->visit_htable[hash];
@@ -180,8 +200,9 @@ EXIT:
 int send_msg_to_kernel(int fd, void *msg, int len)
 {
 	struct sockaddr_nl daddr;
-	if (!msg || len <= 0 || len > MAX_NL_MSG_LEN - (int)sizeof(struct af_msg_hdr))
+	if (!msg || len <= 0 || len > MAX_NL_MSG_LEN - (int)sizeof(struct af_msg_hdr)) {
 		return -1;
+	}
 
 	memset(&daddr, 0, sizeof(daddr));
 	daddr.nl_family = AF_NETLINK;
