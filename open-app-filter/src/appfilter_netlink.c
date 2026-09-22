@@ -177,7 +177,7 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 
 		int type = appid / 1000;
 		int id = appid % 1000;
-		if (id <= 0 || type <= 0) {
+		if (id <= 0 || type <= 0 || type > MAX_APP_TYPE || id > MAX_APP_ID_NUM) {
 			continue;
 		}
 		node->stat[type - 1][id - 1].total_time += REPORT_INTERVAL_SECS;
