@@ -265,6 +265,7 @@ int appfilter_nl_init(void)
 
 	if (bind(fd, (void *)&nls, sizeof(struct sockaddr_nl))) {
 		LOG_DEBUG("Bind failed %s\n", strerror(errno));
+		close(fd);
 		return -1;
 	}
 
