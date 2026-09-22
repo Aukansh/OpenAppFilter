@@ -252,7 +252,7 @@ int af_load_time_config(af_time_config_t *t_config)
 				wd = strtok_r(NULL, ",", &saveptr_wd);
 			}
 		} else {
-			LOG_WARN("af_load_time_config: period[%d] no weekdays, using global days\n",
+			LOG_DEBUG("af_load_time_config: period[%d] no weekdays, using global days\n",
 				 period_idx);
 			old_ver_config = 1;
 		}
@@ -909,7 +909,7 @@ int reload_feature(void)
 	}
 	clean_invalid_app_records();
 	clear_device_app_statistics();
-	LOG_WARN("reload feature success\n");
+	LOG_INFO("reload feature success\n");
 	g_feature_update_time = get_timestamp();
 	return 0;
 }
@@ -922,7 +922,7 @@ void check_date_change(void)
 	int current_day = tm_info->tm_mday;
 
 	if (last_day != current_day) {
-		LOG_WARN("day changed: %d -> %d\n", last_day, current_day);
+		LOG_INFO("day changed: %d -> %d\n", last_day, current_day);
 		if (last_day != -1) {
 			clear_device_app_statistics();
 			reset_all_users_today_active_time();
@@ -956,7 +956,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 	if (count % 300 == 0 && count > 0 && g_af_config.time.time_mode == 2)
 		save_user_time_to_file();
 	if (g_oaf_config_change == 1) {
-		LOG_WARN("config changed\n");
+		LOG_INFO("config changed\n");
 		update_lan_ip();
 		af_load_config(&g_af_config);
 		update_dev_selected_flag();
@@ -991,19 +991,19 @@ void af_load_engine(void)
 	if (g_af_config.global.auto_load_engine == 1) {
 		if (access("/lib/modules/oaf.ko", F_OK) == 0) {
 			system("insmod /lib/modules/oaf.ko");
-			LOG_WARN("insmod /lib/modules/oaf.ko");
+			LOG_INFO("insmod /lib/modules/oaf.ko");
 		} else {
 			system("modprobe oaf");
-			LOG_WARN("modprobe oaf");
+			LOG_INFO("modprobe oaf");
 		}
 	} else {
-		LOG_WARN("auto load disabled, not load oaf.ko\n");
+		LOG_INFO("auto load disabled, not load oaf.ko\n");
 	}
 }
 
 void handle_sigusr1(int sig)
 {
-	LOG_WARN("Received SIGUSR1 signal\n");
+	LOG_INFO("Received SIGUSR1 signal\n");
 	g_feature_update = 1;
 }
 
@@ -1014,7 +1014,7 @@ void handle_sigusr2(int sig)
 		current_log_level = LOG_LEVEL_DEBUG;
 	else
 		current_log_level++;
-	LOG_WARN("change log level to %d\n", current_log_level);
+	LOG_INFO("change log level to %d\n", current_log_level);
 }
 
 int main(int argc, char **argv)
