@@ -9,8 +9,8 @@
 #include "af_config.h"
 #include "af_rule_config.h"
 
-#define AF_MAX_APP_TYPE_NUM 32
-#define AF_MAX_APP_NUM 512
+#define AF_MAX_APP_TYPE_NUM 33
+#define AF_MAX_APP_NUM 513
 
 DEFINE_RWLOCK(af_rule_lock);
 
@@ -30,24 +30,27 @@ static int af_change_app_status(cJSON *data_obj, int status)
 	int id;
 	int type;
 	cJSON *appid_arr = NULL;
-	if (!data_obj)
-	{
+	if (!data_obj) {
 		AF_ERROR("data obj is null\n");
 		return -1;
 	}
 	appid_arr = cJSON_GetObjectItem(data_obj, "apps");
-	if (!appid_arr)
-	{
+	if (!appid_arr) {
 		AF_ERROR("apps obj is null\n");
 		return -1;
 	}
-	for (i = 0; i < cJSON_GetArraySize(appid_arr); i++)
-	{
+	for (i = 0; i < cJSON_GetArraySize(appid_arr); i++) {
 		cJSON *appid_obj = cJSON_GetArrayItem(appid_arr, i);
-		if (!appid_obj)
+		if (!appid_obj) {
 			return -1;
+		}
 		id = AF_APP_ID(appid_obj->valueint);
 		type = AF_APP_TYPE(appid_obj->valueint);
+		if (type < 0 || type >= AF_MAX_APP_TYPE_NUM ||
+		    id < 0 || id >= AF_MAX_APP_NUM) {
+			AF_ERROR("invalid appid %d\n", appid_obj->valueint);
+			continue;
+		}
 		af_rule_write_lock();
 		g_app_id_array[type][id] = status;
 		af_rule_write_unlock();
@@ -56,16 +59,12 @@ static int af_change_app_status(cJSON *data_obj, int status)
 	return 0;
 }
 
-
-
 void af_init_app_status(void)
 {
 	int i, j;
 
-	for (i = 0; i < AF_MAX_APP_TYPE_NUM; i++)
-	{
-		for (j = 0; j < AF_MAX_APP_NUM; j++)
-		{
+	for (i = 0; i < AF_MAX_APP_TYPE_NUM; i++) {
+		for (j = 0; j < AF_MAX_APP_NUM; j++) {
 			af_rule_write_lock();
 			g_app_id_array[i][j] = AF_FALSE;
 			af_rule_write_unlock();
@@ -77,6 +76,10 @@ int af_get_app_status(int appid)
 	int status = 0;
 	int id = AF_APP_ID(appid);
 	int type = AF_APP_TYPE(appid);
+	if (type < 0 || type >= AF_MAX_APP_TYPE_NUM ||
+	    id < 0 || id >= AF_MAX_APP_NUM) {
+		return 0;
+	}
 	af_rule_read_lock();
 	status = g_app_id_array[type][id];
 	af_rule_read_unlock();
