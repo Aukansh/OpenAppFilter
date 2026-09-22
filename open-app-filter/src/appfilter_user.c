@@ -92,6 +92,7 @@ dev_node_t *add_dev_node(char *mac)
 	strncpy(node->mac, mac, sizeof(node->mac));
 	node->online = 0;
 	node->online_time = get_timestamp();
+	node->offline_time = get_timestamp();
 	if (dev_hash_table[hash] == NULL) {
 		dev_hash_table[hash] = node;
 	} else {
