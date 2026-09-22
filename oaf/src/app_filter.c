@@ -1440,6 +1440,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		AF_CLIENT_UNLOCK_R();
 		return NF_ACCEPT;
 	}
+	memcpy(client_mac, client->mac, ETH_ALEN);
 	client->update_jiffies = jiffies;
 	AF_CLIENT_UNLOCK_R();
 
