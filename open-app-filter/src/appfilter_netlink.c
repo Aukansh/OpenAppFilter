@@ -77,6 +77,14 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 		return;
 	}
 
+	/* recvmsg() may not have NUL-terminated the payload. Force it so that
+	 * json_tokener_parse() cannot read past the received bytes. */
+	if (ret >= MAX_NL_RCV_BUF_SIZE) {
+		printf("netlink oversize: %d bytes\n", ret);
+		return;
+	}
+	buf[ret] = '\0';
+
 	struct nlmsghdr *h = (struct nlmsghdr *)buf;
 	if (h->nlmsg_len < sizeof(struct nlmsghdr) + sizeof(struct af_msg_hdr) ||
 	    (int)h->nlmsg_len > ret) {
