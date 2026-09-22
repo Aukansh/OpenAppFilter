@@ -143,6 +143,7 @@ void af_conn_clean_timeout(void)
 struct af_conn_iter_state
 {
 	unsigned int bucket;
+	int index;
 };
 
 static void *af_conn_seq_start(struct seq_file *s, loff_t *pos)
@@ -201,22 +202,22 @@ static int af_conn_seq_show(struct seq_file *s, void *v)
 {
 	unsigned char src_ip_str[32] = {0};
 	unsigned char dst_ip_str[32] = {0};
-	static int index = 0;
+	struct af_conn_iter_state *st = s->private;
 	af_conn_t *node = (af_conn_t *)v;
 
 	if (v == SEQ_START_TOKEN) {
-		index = 0;
+		st->index = 0;
 		seq_printf(s, "%-4s %-20s %-20s %-12s %-12s %-12s %-12s %-12s %-12s %-12s\n",
 			   "Id", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "app_id", "drop", "inactive", "total_pkts");
 		return 0;
 	}
 
-	index++;
+	st->index++;
 	sprintf(src_ip_str, "%pI4", &node->src_ip);
 	sprintf(dst_ip_str, "%pI4", &node->dst_ip);
 	u_int32_t inactive_time = jiffies - node->last_jiffies;
 
-	seq_printf(s, "%-4d %-20s %-20s %-12d %-12d %-12d %-12d %-12d %-12d %-12d\n", index, src_ip_str, dst_ip_str,
+	seq_printf(s, "%-4d %-20s %-20s %-12d %-12d %-12d %-12d %-12d %-12d %-12d\n", st->index, src_ip_str, dst_ip_str,
 		   node->src_port, node->dst_port, node->protocol, node->app_id, node->drop, inactive_time, node->total_pkts);
 	return 0;
 }
