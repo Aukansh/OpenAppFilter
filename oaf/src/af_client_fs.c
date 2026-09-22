@@ -31,6 +31,7 @@ struct af_client_iter_state
 {
 	unsigned int bucket;
 	void *head;
+	int index;
 };
 
 static void *af_client_get_first(struct seq_file *seq)
@@ -111,20 +112,20 @@ static int af_client_seq_show(struct seq_file *s, void *v)
 	unsigned char ip_str[32] = {0};
 	unsigned char ipv6_str[128];
 
-	static int index = 0;
+	struct af_client_iter_state *st = s->private;
 	af_client_info_t *node = (af_client_info_t *)v;
 
 	if (v == SEQ_START_TOKEN) {
-		index = 0;
+		st->index = 0;
 		seq_printf(s, "%-4s %-20s %-20s %-32s  %-16s %-16s\n", "Id", "Mac", "IP", "IPv6", "UpRate", "DownRate");
 		return 0;
 	}
-	index++;
+	st->index++;
 	sprintf(mac_str, MAC_FMT, MAC_ARRAY(node->mac));
 	sprintf(ip_str, "%pI4", &node->ip);
 	ipv6_to_str(&node->ipv6, ipv6_str);
 
-	seq_printf(s, "%-4d %-20s %-20s %-32s %-16d %-16d\n", index, mac_str, ip_str, ipv6_str, node->rate.up_rate, node->rate.down_rate);
+	seq_printf(s, "%-4d %-20s %-20s %-32s %-16d %-16d\n", st->index, mac_str, ip_str, ipv6_str, node->rate.up_rate, node->rate.down_rate);
 	return 0;
 }
 
