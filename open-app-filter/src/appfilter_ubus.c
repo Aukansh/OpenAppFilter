@@ -622,11 +622,24 @@ static int parse_feature_cfg(struct json_object *class_list)
 				json_object_array_add(class_list, current_class);
 			}
 
+			/* Guard: "#class" alone (no trailing space/name) would make
+			 * line+7 point past the string terminator. Skip such lines. */
+			if (strlen(line) <= 6 || line[6] != ' ') {
+				current_class = NULL;
+				app_list = NULL;
+				continue;
+			}
+
 			char *name = strtok(line + 7, " ");
 			char *class_name = NULL;
 			while (name != NULL) {
 				class_name = name;
 				name = strtok(NULL, " ");
+			}
+			if (!class_name) {
+				current_class = NULL;
+				app_list = NULL;
+				continue;
 			}
 			current_class = json_object_new_object();
 			json_object_object_add(current_class, "name",
