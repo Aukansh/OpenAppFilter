@@ -98,7 +98,10 @@ int af_uci_get_int_value(struct uci_context *ctx, char *key)
 	int ret = -1;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return ret;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK)
@@ -131,7 +134,10 @@ int af_uci_get_value(struct uci_context *ctx, char *key, char *output, int out_l
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -168,7 +174,10 @@ int af_uci_delete(struct uci_context *ctx, char *key)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -194,7 +203,7 @@ int af_uci_add_list(struct uci_context *ctx, char *key, char *value)
 	}
 
 	char param_tmp[MAX_PARAM_LIST_LEN] = {0};
-	sprintf(param_tmp, "%s=%s", key, value);
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -215,7 +224,10 @@ int af_uci_get_list_value(struct uci_context *ctx, char *key, char *output, int 
 	int ret = -1;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return ret;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK)
@@ -261,7 +273,10 @@ int af_uci_add_int_list(struct uci_context *ctx, char *key, int value)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	sprintf(param_tmp, "%s=%d", key, value);
+	if (!key || strlen(key) + 16 >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -282,7 +297,10 @@ int af_uci_del_list(struct uci_context *ctx, char *key, char *value)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	sprintf(param_tmp, "%s=%s", key, value);
+	if (!key || !value || strlen(key) + strlen(value) + 2 > sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -337,7 +355,10 @@ int af_uci_set_int_value(struct uci_context *ctx, char *key, int value)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	sprintf(param_tmp, "%s=%d", key, value);
+	if (!key || strlen(key) + 16 >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
