@@ -60,6 +60,7 @@ void get_hostname_by_mac(char *mac, char *hostname)
 {
 	if (!mac || !hostname)
 		return;
+	hostname[0] = '\0';
 
 	FILE *fp = fopen("/tmp/dhcp.leases", "r");
 	if (!fp) {
@@ -426,10 +427,14 @@ void update_top5_app(dev_node_t *node, app_visit_time_info_t top5_app_list[])
 		for (int j = 0; j < MAX_APP_ID_NUM; j++) {
 			if (node->stat[i][j].total_time == 0)
 				continue;
+			if (app_visit_num >= MAX_STAT_APP_NUM)
+				break;
 			app_visit_array[app_visit_num].app_id = (i + 1) * 1000 + j + 1;
 			app_visit_array[app_visit_num].total_time = node->stat[i][j].total_time;
 			app_visit_num++;
 		}
+		if (app_visit_num >= MAX_STAT_APP_NUM)
+			break;
 	}
 
 	qsort((void *)app_visit_array, app_visit_num,

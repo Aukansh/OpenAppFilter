@@ -23,6 +23,9 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <pthread.h>
+#include <time.h>
 #include "appfilter_config.h"
 #include "appfilter.h"
 #include <uci.h>
@@ -36,12 +39,69 @@ const char *config_path = "./config";
 static struct uci_context *uci_ctx = NULL;
 static struct uci_package *uci_appfilter;
 
+static pthread_mutex_t af_log_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void af_log(LogLevel level, const char *format, ...)
+{
+	FILE *log_file;
+	time_t now;
+	struct tm *t;
+	char time_str[20];
+	const char *level_str;
+	va_list args;
+
+	if (level > current_log_level)
+		return;
+
+	pthread_mutex_lock(&af_log_mutex);
+	log_file = fopen(LOG_FILE_PATH, "a");
+	if (!log_file) {
+		perror("Failed to open log file");
+		pthread_mutex_unlock(&af_log_mutex);
+		return;
+	}
+
+	now = time(NULL);
+	t = localtime(&now);
+	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);
+
+	switch (level) {
+	case LOG_LEVEL_DEBUG:
+		level_str = "DEBUG";
+		break;
+	case LOG_LEVEL_INFO:
+		level_str = "INFO";
+		break;
+	case LOG_LEVEL_WARN:
+		level_str = "WARN";
+		break;
+	case LOG_LEVEL_ERROR:
+		level_str = "ERROR";
+		break;
+	default:
+		level_str = "UNKNOWN";
+		break;
+	}
+
+	fprintf(log_file, "[%s] [%s] ", time_str, level_str);
+
+	va_start(args, format);
+	vfprintf(log_file, format, args);
+	va_end(args);
+
+	fclose(log_file);
+	pthread_mutex_unlock(&af_log_mutex);
+}
+
 int af_uci_get_int_value(struct uci_context *ctx, char *key)
 {
 	int ret = -1;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return ret;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK)
@@ -74,7 +134,10 @@ int af_uci_get_value(struct uci_context *ctx, char *key, char *output, int out_l
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -111,7 +174,10 @@ int af_uci_delete(struct uci_context *ctx, char *key)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -137,7 +203,7 @@ int af_uci_add_list(struct uci_context *ctx, char *key, char *value)
 	}
 
 	char param_tmp[MAX_PARAM_LIST_LEN] = {0};
-	sprintf(param_tmp, "%s=%s", key, value);
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -158,7 +224,10 @@ int af_uci_get_list_value(struct uci_context *ctx, char *key, char *output, int 
 	int ret = -1;
 	char param_tmp[128] = {0};
 
-	strcpy(param_tmp, key);
+	if (!key || strlen(key) >= sizeof(param_tmp)) {
+		return ret;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK)
@@ -204,7 +273,10 @@ int af_uci_add_int_list(struct uci_context *ctx, char *key, int value)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	sprintf(param_tmp, "%s=%d", key, value);
+	if (!key || strlen(key) + 16 >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -225,7 +297,10 @@ int af_uci_del_list(struct uci_context *ctx, char *key, char *value)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	sprintf(param_tmp, "%s=%s", key, value);
+	if (!key || !value || strlen(key) + strlen(value) + 2 > sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
@@ -280,7 +355,10 @@ int af_uci_set_int_value(struct uci_context *ctx, char *key, int value)
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	sprintf(param_tmp, "%s=%d", key, value);
+	if (!key || strlen(key) + 16 >= sizeof(param_tmp)) {
+		return 1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {

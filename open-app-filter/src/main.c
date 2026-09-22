@@ -212,6 +212,10 @@ int af_load_time_config(af_time_config_t *t_config)
 	do {
 		printf("af_load_time_config: parsing period[%d]: %s\n", period_idx, p);
 
+		if (t_config->time_num >= MAX_TIME_LIST) {
+			LOG_WARN("af_load_time_config: time_list full, skip remaining\n");
+			break;
+		}
 		char *time_part = p;
 		/* Initialize days array for this time period (use global days as default) */
 		for (int i = 0; i < 7; i++)

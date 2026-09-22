@@ -54,7 +54,7 @@ unsigned int hash_mac(unsigned char *mac)
 
 int hash_appid(int appid)
 {
-	return appid % (MAX_VISIT_HASH_SIZE - 1);
+	return appid & (MAX_VISIT_HASH_SIZE - 1);
 }
 
 void add_visit_info_node(visit_info_t **head, visit_info_t *node)
@@ -92,6 +92,7 @@ dev_node_t *add_dev_node(char *mac)
 	strncpy(node->mac, mac, sizeof(node->mac));
 	node->online = 0;
 	node->online_time = get_timestamp();
+	node->offline_time = get_timestamp();
 	if (dev_hash_table[hash] == NULL) {
 		dev_hash_table[hash] = node;
 	} else {
