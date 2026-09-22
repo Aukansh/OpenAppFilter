@@ -60,6 +60,7 @@ void get_hostname_by_mac(char *mac, char *hostname)
 {
 	if (!mac || !hostname)
 		return;
+	hostname[0] = '\0';
 
 	FILE *fp = fopen("/tmp/dhcp.leases", "r");
 	if (!fp) {
