@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <time.h>
 #include <stdarg.h>
 #include "utils.h"
@@ -22,6 +23,8 @@ typedef enum {
 
 extern int current_log_level;
 
+static pthread_mutex_t af_log_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static void af_log(LogLevel level, const char *format, ...)
 {
 	FILE *log_file;
@@ -34,9 +37,11 @@ static void af_log(LogLevel level, const char *format, ...)
 	if (level > current_log_level)
 		return;
 
+	pthread_mutex_lock(&af_log_mutex);
 	log_file = fopen(LOG_FILE_PATH, "a");
 	if (!log_file) {
 		perror("Failed to open log file");
+		pthread_mutex_unlock(&af_log_mutex);
 		return;
 	}
 
@@ -69,6 +74,7 @@ static void af_log(LogLevel level, const char *format, ...)
 	va_end(args);
 
 	fclose(log_file);
+	pthread_mutex_unlock(&af_log_mutex);
 }
 
 #define LOG_DEBUG(format, ...)	af_log(LOG_LEVEL_DEBUG, format, ##__VA_ARGS__)

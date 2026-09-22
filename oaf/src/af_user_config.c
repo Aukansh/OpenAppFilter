@@ -19,8 +19,7 @@ void af_mac_list_init(void)
 {
 	int i;
 	write_lock_bh(&af_mac_lock);
-	for (i = 0; i < MAX_AF_MAC_HASH_SIZE; i++)
-	{
+	for (i = 0; i < MAX_AF_MAC_HASH_SIZE; i++) {
 		INIT_LIST_HEAD(&af_mac_htable[i]);
 	}
 	write_unlock_bh(&af_mac_lock);
@@ -32,10 +31,8 @@ void af_mac_list_flush(void)
 	af_mac_node_t *p = NULL;
 	char mac_str[32] = {0};
 	write_lock_bh(&af_mac_lock);
-	for (i = 0; i < MAX_AF_MAC_HASH_SIZE; i++)
-	{
-		while (!list_empty(&af_mac_htable[i]))
-		{
+	for (i = 0; i < MAX_AF_MAC_HASH_SIZE; i++) {
+		while (!list_empty(&af_mac_htable[i])) {
 			p = list_first_entry(&af_mac_htable[i], af_mac_node_t, list);
 			memset(mac_str, 0x0, sizeof(mac_str));
 			sprintf(mac_str, MAC_FMT, MAC_ARRAY(p->mac));
@@ -54,10 +51,8 @@ af_mac_node_t *af_mac_find(unsigned char *mac)
 
 	index = hash_mac(mac);
 	read_lock_bh(&af_mac_lock);
-	list_for_each_entry(node, &af_mac_htable[index], list)
-	{
-		if (0 == memcmp(node->mac, mac, 6))
-		{
+	list_for_each_entry(node, &af_mac_htable[index], list) {
+		if (0 == memcmp(node->mac, mac, 6)) {
 			read_unlock_bh(&af_mac_lock);
 			return node;
 		}
@@ -72,8 +67,7 @@ af_mac_node_t *af_mac_add(unsigned char *mac)
 	int index = 0;
 
 	node = (af_mac_node_t *)kmalloc(sizeof(af_mac_node_t), GFP_ATOMIC);
-	if (node == NULL)
-	{
+	if (node == NULL) {
 		return NULL;
 	}
 
@@ -82,7 +76,9 @@ af_mac_node_t *af_mac_add(unsigned char *mac)
 
 	index = hash_mac(mac);
 
-	printk("add user mac=" MAC_FMT "\n", MAC_ARRAY(node->mac));
+	/* Only log via debug level to avoid spamming dmesg when the whole
+	 * list is refreshed by user-space (flush + re-add on each config). */
+	AF_DEBUG("add user mac=" MAC_FMT "\n", MAC_ARRAY(node->mac));
 	total_mac++;
 	write_lock_bh(&af_mac_lock);
 	list_add(&(node->list), &af_mac_htable[index]);
@@ -102,28 +98,32 @@ int af_config_set_mac_list(cJSON *data_obj)
 	int i;
 	cJSON *mac_arr = NULL;
 	u8 mac_hex[MAC_ADDR_LEN] = {0};
-	if (!data_obj)
-	{
+	if (!data_obj) {
 		AF_ERROR("data obj is null\n");
 		return -1;
 	}
 	mac_arr = cJSON_GetObjectItem(data_obj, "mac_list");
-	if (!mac_arr)
-	{
+	if (!mac_arr) {
 		AF_ERROR("mac_list obj is null\n");
 		return -1;
 	}
+	/* Nothing changed: skip the whole flush+add cycle to avoid log flood. */
+	if (total_mac == (u32)cJSON_GetArraySize(mac_arr) && total_mac == 0) {
+		return 0;
+	}
 	af_mac_list_flush();
-	for (i = 0; i < cJSON_GetArraySize(mac_arr); i++)
-	{
+	for (i = 0; i < cJSON_GetArraySize(mac_arr); i++) {
 		cJSON *mac_obj = cJSON_GetArrayItem(mac_arr, i);
-		if (!mac_obj)
-		{
+		if (!mac_obj) {
 			AF_ERROR("mac obj is null\n");
 			return -1;
 		}
-		if (-1 == mac_to_hex(mac_obj->valuestring, mac_hex))
-		{
+		if (-1 == mac_to_hex(mac_obj->valuestring, mac_hex)) {
+			continue;
+		}
+		/* Skip if the MAC already exists (defensive; flush() already
+		 * cleared the table but keeps this safe if flush is bypassed). */
+		if (af_mac_find(mac_hex)) {
 			continue;
 		}
 		af_mac_add(mac_hex);

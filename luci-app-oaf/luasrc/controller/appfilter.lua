@@ -5,13 +5,15 @@ function index()
 	if not nixio.fs.access("/etc/config/appfilter") then
 		return
 	end
-	
+
 	local page
-	entry({"admin", "services", "appfilter"}, alias("admin", "services", "appfilter", "user_list"),_("App Filter"), 10).dependent = true
+	page = entry({"admin", "services", "appfilter"}, alias("admin", "services", "appfilter", "user_list"),_("App Filter"), 10)
+	page.dependent = true
+	page.acl_depends = { "luci-app-appfilter" }
 
 
-	entry({"admin", "services", "appfilter", "user_list"}, 
-		arcombine(cbi("appfilter/user_list",{hideapplybtn=true, hidesavebtn=true, hideresetbtn=true}), 
+	entry({"admin", "services", "appfilter", "user_list"},
+		arcombine(cbi("appfilter/user_list",{hideapplybtn=true, hidesavebtn=true, hideresetbtn=true}),
 		cbi("appfilter/dev_status", {hideapplybtn=true, hidesavebtn=true, hideresetbtn=true})),
 		_("User List"), 20).leaf=true
 
@@ -49,6 +51,7 @@ function index()
 	entry({"admin", "network", "set_app_filter_adv"}, call("set_app_filter_adv"), nil).leaf = true
 	entry({"admin", "network", "disable_flow_offloading"}, call("disable_flow_offloading"), nil).leaf = true
 	entry({"admin", "network", "cmd"}, call("handle_cmd"), nil).leaf = true
+	entry({"admin", "network", "get_network_interfaces"}, call("get_network_interfaces"), nil).leaf = true
 
 
 	entry({"admin", "appfilter", "feature", "info"}, call("get_feature_info"), nil).leaf = true
@@ -61,22 +64,22 @@ function index()
 end
 
 function get_hostname_by_mac(dst_mac)
-    leasefile="/tmp/dhcp.leases"
-    local fd = io.open(leasefile, "r")
+	leasefile="/tmp/dhcp.leases"
+	local fd = io.open(leasefile, "r")
 	if not fd then return end
-    while true do
-        local ln = fd:read("*l")
-        if not ln then
-            break
-        end
-        local ts, mac, ip, name, duid = ln:match("^(%d+) (%S+) (%S+) (%S+) (%S+)")
-        if  dst_mac == mac then
-            fd:close()
-            return name
-        end
-    end
+	while true do
+		local ln = fd:read("*l")
+		if not ln then
+			break
+		end
+		local ts, mac, ip, name, duid = ln:match("^(%d+) (%S+) (%S+) (%S+) (%S+)")
+		if  dst_mac == mac then
+			fd:close()
+			return name
+		end
+	end
 	fd:close()
-    return ""
+	return ""
 end
 
 
@@ -88,9 +91,9 @@ function handle_feature_upgrade()
 	local fp
 	http.setfilehandler(
 		function(meta, chunk, eof)
-	
+
 			fp = io.open(image_tmp, "w")
-			
+
 			if fp and chunk then
 				fp:write(chunk)
 			end
@@ -125,7 +128,7 @@ function user_status()
 	status_buf=fd:read('*a')
 	fd:close()
 	user_array=json.parse(status_buf)
-	
+
 	local visit_obj=utl.ubus("appfilter", "visit_list", {});
 	local user_array=visit_obj.dev_list
 	local history={}
@@ -188,6 +191,26 @@ function get_oaf_status()
 	luci.http.prepare_content("application/json")
 	local resp_obj=utl.ubus("appfilter", "get_oaf_status", {});
 	luci.http.write_json(resp_obj);
+end
+
+function get_network_interfaces()
+	local json = require "luci.jsonc"
+	luci.http.prepare_content("application/json")
+	local ifaces = {}
+	local f = io.popen("ls /sys/class/net/ 2>/dev/null")
+	if f then
+		for name in f:lines() do
+			if name ~= "lo"
+			   and not name:match("^ifb%-")
+			   and not name:match("^teql")
+			   and name ~= "bonding_masters" then
+				table.insert(ifaces, name)
+			end
+		end
+		f:close()
+	end
+	table.sort(ifaces)
+	luci.http.write_json({ data = ifaces })
 end
 
 function get_app_filter_user()
@@ -256,14 +279,14 @@ end
 function set_app_filter()
 	local json = require "luci.jsonc"
 	luci.http.prepare_content("application/json")
-	
+
 	local app_list_str = luci.http.formvalue("app_list")
 
 	local app_list = {}
 	for id in app_list_str:gmatch("([^,]+)") do
 		table.insert(app_list, tonumber(id))
 	end
-	
+
 	local req_obj = {
 		app_list = app_list
 	}
@@ -311,6 +334,7 @@ function set_app_filter_base()
 	local record_enable = luci.http.formvalue("record_enable")
 	local disable_quic = luci.http.formvalue("disable_quic")
 	local app_filter_mode = luci.http.formvalue("app_filter_mode")
+	local daily_limit_mode = luci.http.formvalue("daily_limit_mode")
 
 	llog("enable: "..enable.." work_mode: "..work_mode.." record_enable: "..record_enable.." disable_quic: "..(disable_quic or "nil").." app_filter_mode: "..(app_filter_mode or "nil"))
 	req_obj.enable = enable
@@ -321,6 +345,9 @@ function set_app_filter_base()
 	end
 	if app_filter_mode then
 		req_obj.app_filter_mode = app_filter_mode
+	end
+	if daily_limit_mode then
+		req_obj.daily_limit_mode = daily_limit_mode
 	end
 
 	local resp_obj=utl.ubus("appfilter", "set_app_filter_base", req_obj);
@@ -363,6 +390,10 @@ function handle_cmd()
 	end
 	local req_obj = {}
 	req_obj.action = action
+	local mac = luci.http.formvalue("mac")
+	if mac then
+		req_obj.mac = mac
+	end
 	local resp_obj=utl.ubus("appfilter", "cmd", req_obj);
 	luci.http.write_json(resp_obj);
 end
@@ -449,67 +480,67 @@ function get_dev_visit_list(mac)
 end
 
 function handle_file_upload()
-    local http = require "luci.http"
-    local fs = require "nixio.fs"
-    local upload_dir = "/tmp/uploads/"
-    local file_name = "uploaded_file"
-    llog("handle_file_upload started");
+	local http = require "luci.http"
+	local fs = require "nixio.fs"
+	local upload_dir = "/tmp/uploads/"
+	local file_name = "uploaded_file"
+	llog("handle_file_upload started");
 
-    -- Ensure the upload directory exists
-    if not fs.access(upload_dir) then
-        fs.mkdir(upload_dir)
-    end
+	-- Ensure the upload directory exists
+	if not fs.access(upload_dir) then
+		fs.mkdir(upload_dir)
+	end
 
-    llog("Upload directory checked/created");
+	llog("Upload directory checked/created");
 
-    local file_path = upload_dir .. file_name
-    local fp
+	local file_path = upload_dir .. file_name
+	local fp
 
-    llog("file_path: " .. file_path);
-    http.setfilehandler(
-        function(meta, chunk, eof)
-            -- Log metadata information
-            llog("File upload metadata: " .. (meta and meta.name or "nil") .. ", " .. (meta and meta.file or "nil"))
-            llog("File upload chunk size: " .. (chunk and #chunk or 0))
+	llog("file_path: " .. file_path);
+	http.setfilehandler(
+		function(meta, chunk, eof)
+			-- Log metadata information
+			llog("File upload metadata: " .. (meta and meta.name or "nil") .. ", " .. (meta and meta.file or "nil"))
+			llog("File upload chunk size: " .. (chunk and #chunk or 0))
 
-            if not fp then
-                fp = io.open(file_path, "w")
-                llog("File opened for writing: " .. file_path)
-            end
-            if fp and chunk then
-                fp:write(chunk)
-                llog("Chunk written to file")
-            end
-            if fp and eof then
-                fp:close()
-                llog("File upload completed and file closed")
-                -- Ensure the file is processed or moved to the correct location
-                process_uploaded_file(file_path)
-                luci.http.prepare_content("application/json")
-                luci.http.write_json({ success = true, message = "File uploaded successfully" })
-            end
-        end
-    )
-    llog("handle_file_upload setup complete");
+			if not fp then
+				fp = io.open(file_path, "w")
+				llog("File opened for writing: " .. file_path)
+			end
+			if fp and chunk then
+				fp:write(chunk)
+				llog("Chunk written to file")
+			end
+			if fp and eof then
+				fp:close()
+				llog("File upload completed and file closed")
+				-- Ensure the file is processed or moved to the correct location
+				process_uploaded_file(file_path)
+				luci.http.prepare_content("application/json")
+				luci.http.write_json({ success = true, message = "File uploaded successfully" })
+			end
+		end
+	)
+	llog("handle_file_upload setup complete");
 end
 
 function process_uploaded_file(file_path)
-    -- Add logic here to process the uploaded file
-    llog("Processing uploaded file: " .. file_path)
-    -- Example: Move the file to a permanent location
-    local permanent_path = "/etc/config/" .. file_name
-    os.execute("mv " .. file_path .. " " .. permanent_path)
-    llog("File moved to: " .. permanent_path)
+	-- Add logic here to process the uploaded file
+	llog("Processing uploaded file: " .. file_path)
+	-- Example: Move the file to a permanent location
+	local permanent_path = "/etc/config/" .. file_name
+	os.execute("mv " .. file_path .. " " .. permanent_path)
+	llog("File moved to: " .. permanent_path)
 end
 
 function llog(message)
-    local log_file = "/tmp/log/oaf_luci.log"  
-    local fd = io.open(log_file, "a") 
-    if fd then
-        local timestamp = os.date("%Y-%m-%d %H:%M:%S") 
-        fd:write(string.format("[%s] %s\n", timestamp, message))  
-        fd:close()  
-    end
+	local log_file = "/tmp/log/oaf_luci.log"
+	local fd = io.open(log_file, "a")
+	if fd then
+		local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+		fd:write(string.format("[%s] %s\n", timestamp, message))
+		fd:close()
+	end
 end
 
 

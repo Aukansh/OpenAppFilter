@@ -78,14 +78,14 @@ static RE* compile(char *regexp)
 					tmp->nccl = 0;
 					tmp->ccl = getmem(11);
 					creat_list(tmp->ccl, '0','9');
-					tmp->ccl[11] = '\0';
+					tmp->ccl[10] = '\0';
 				}else if(*regexp == 'D')
 				{
 					tmp->type = LIST;
 					tmp->nccl = 1;
 					tmp->ccl = getmem(11);
 					creat_list(tmp->ccl, '0','9');
-					tmp->ccl[11] = '\0';
+					tmp->ccl[10] = '\0';
 				}else
 				{
 					tmp->type = CHAR;

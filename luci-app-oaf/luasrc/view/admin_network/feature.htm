@@ -3,49 +3,52 @@
 <div class="feature-container">
 	<!-- 基本信息卡片 -->
 	<div id="feature-info" class="feature-info-card">
-			<div class="feature-info-grid">
-				<div class="feature-info-item">
-					<span class="feature-info-label"><%:Current version%></span>
-					<span class="feature-info-value" id="info-version">--</span>
-				</div>
-				<div class="feature-info-item">
-					<span class="feature-info-label"><%:Feature format%></span>
-					<span class="feature-info-value" id="info-format">--</span>
-				</div>
-				<div class="feature-info-item">
-					<span class="feature-info-label"><%:App number%></span>
-					<span class="feature-info-value" id="info-appnum">--</span>
-				</div>
-				<div class="feature-info-item">
-					<span class="feature-info-label"><%:Feature download%></span>
-					<span class="feature-info-value"><a href="https://www.openappfilter.com" target="_blank">www.openappfilter.com</a></span>
-				</div>
+		<div class="feature-info-grid">
+			<div class="feature-info-item">
+				<span class="feature-info-label"><%:Current version%></span>
+				<span class="feature-info-value" id="info-version">--</span>
 			</div>
-
+			<div class="feature-info-item">
+				<span class="feature-info-label"><%:Feature format%></span>
+				<span class="feature-info-value" id="info-format">--</span>
+			</div>
+			<div class="feature-info-item">
+				<span class="feature-info-label"><%:App number%></span>
+				<span class="feature-info-value" id="info-appnum">--</span>
+			</div>
+			<div class="feature-info-item">
+				<span class="feature-info-label"><%:Feature download%></span>
+				<span class="feature-info-value"><a href="https://www.openappfilter.com" target="_blank">www.openappfilter.com</a></span>
+			</div>
+		</div>
 
 		<div class="feature-card">
-			<div class="feature-row">
-				<label class="feature-label" for="ulfile"><%:Feature Upgrade%>:</label>
-				<div class="feature-inputs">
-					<input class="cbi-input-file feature-file" type="file" id="ulfile" name="ulfile" />
-					<input type="submit" class="cbi-button cbi-input-apply feature-btn" name="upload" value="<%:Upload%>" onclick="startUpgradeStatusPoll(); return true;"/>
+			<form method="post" enctype="multipart/form-data" id="feature-upload-form" onsubmit="startUpgradeStatusPoll();">
+				<div class="feature-row">
+					<label class="feature-label" for="ulfile"><%:Feature Upgrade%>:</label>
+					<div class="feature-inputs">
+						<input class="cbi-input-file feature-file" type="file" id="ulfile" name="ulfile" required />
+						<input type="submit" class="cbi-button cbi-input-apply feature-btn" name="upload" value="<%:Upload%>" />
+					</div>
 				</div>
-			</div>
+			</form>
 			<div class="feature-hint" id="upload-hint">
 				<%:You can download the App feature library from the website(www.openappfilter.com),then upload it here.Please note that after downloading, you need to extract the files and select the one in .bin format.%>
 			</div>
 			<div class="feature-status" id="upgrade-status" style="display:none;"></div>
+			<div class="feature-status" id="upload-result" style="display:none;"></div>
 		</div>
 
-	<div class="feature-card" style="margin-top: 16px;">
-		<div class="feature-row" style="margin-bottom: 8px;">
-			<label class="feature-label"><%:App List%>:</label>
+		<div class="feature-card" style="margin-top: 16px;">
+			<div class="feature-row" style="margin-bottom: 8px;">
+				<label class="feature-label"><%:App List%>:</label>
+			</div>
+			<div id="app-list" class="app-list"></div>
 		</div>
-		<div id="app-list" class="app-list"></div>
-	</div>
 
-	<div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-		<button type="button" class="submit-button" onclick="location.reload()" style="padding: 8px 20px; width: 150px; background: transparent; color: #1a73e8; border: 1px solid var(--border-color-medium, #d1d5db); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; line-height: 1.4;"><%:Refresh%></button>
+		<div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+			<button type="button" class="submit-button" onclick="location.reload()" style="padding: 8px 20px; width: 150px; background: transparent; color: #1a73e8; border: 1px solid var(--border-color-medium, #d1d5db); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; line-height: 1.4;"><%:Refresh%></button>
+		</div>
 	</div>
 </div>
 
@@ -56,51 +59,103 @@
 </div>
 
 <style>
-/* 让顶部描述和下方内容左侧对齐 */
-.cbi-map-descr {
-    margin: 0 10px 10px 10px;
-    font-size: 13px;
-    line-height: 1.6;
-}
+	/* 让顶部描述和下方内容左侧对齐 */
+	.cbi-map-descr {
+		margin: 0 10px 10px 10px;
+		font-size: 13px;
+		line-height: 1.6;
+	}
 
-.feature-container { padding: 10px; }
-.feature-info-card{padding:16px;border:1px solid var(--border-color-low, #e5e7eb);border-radius:8px;background:var(--background-color-high, #ffffff);margin-bottom:12px;}
-.feature-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
-.feature-info-item{padding:10px 12px;border:1px solid var(--border-color-low, #e5e7eb);border-radius:6px;background:var(--background-color-low, #f5f5f5);}
-.feature-info-label{display:block;font-size:13px;color:var(--text-color-medium, #6b7280);margin-bottom:4px;}
-.feature-info-value{font-weight:600;font-size:15px;color:var(--text-color-high, #333);}
-.feature-card {background: var(--background-color-high, #ffffff);border: 1px solid var(--border-color-low, #e5e7eb);border-radius: 8px;padding: 16px;margin-top: 12px;}
-.feature-row {display: flex;align-items: center;gap: 12px;flex-wrap: wrap;}
-.feature-label {min-width: 120px;font-weight: 600;}
-.feature-inputs {display: flex;align-items: center;gap: 10px;flex: 1;}
-.feature-file {width: 100%;max-width: 360px;}
-.feature-btn {min-width: 110px;}
-.feature-hint {margin-top: 10px;color: var(--text-color-medium, #6b7280);font-size: 13px;line-height: 1.5;}
-.feature-status {margin-top: 8px;font-size: 14px;font-weight: 600;}
-.feature-status.success {color: #34d399;}
-.feature-status.error {color: #f87171;}
-.feature-modal {display: none;position: fixed;top: 0; left: 0; right: 0; bottom: 0;background-color: rgba(0, 0, 0, 0.5);z-index: 1000;justify-content: center;align-items: center;}
-.feature-modal-content {background: var(--background-color-high, #ffffff);padding: 16px 20px;border-radius: 6px;color: var(--text-color-high, #333);min-width: 200px;text-align: center;box-shadow: 0 4px 12px rgba(0,0,0,0.4);border: 1px solid var(--border-color-low, #e5e7eb);}
-.app-list {margin-top: 10px;}
-.class-card {margin-bottom: 16px;border:1px solid var(--border-color-low, #e5e7eb);border-radius:8px;background:var(--background-color-high, #ffffff);}
-.class-header {padding:12px 16px;font-weight:600;font-size:15px;border-bottom:1px solid var(--border-color-low, #e5e7eb);color:var(--text-color-high, #333);}
-.app-items {display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 16px;}
-.app-item {display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border-color-medium, #d1d5db);border-radius:6px;background:var(--background-color-low, #f5f5f5);font-size:13px;cursor:default;transition:all 0.2s ease;}
-.app-item:hover {background:var(--background-color-medium, #eeeeee);border-color:var(--border-color-high, #9ca3af);transform:translateY(-1px);}
-.app-item img {width:20px;height:20px;object-fit:contain;border-radius:4px;}
-.app-item span {color:var(--text-color-medium, #6b7280);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;}
-@media (min-width: 800px) {
-	.app-items {grid-template-columns:repeat(6,1fr);}
-}
-@media (min-width: 1200px) {
-	.app-items {grid-template-columns:repeat(8,1fr);}
-}
+	.feature-container { padding: 10px; }
+	.feature-info-card{padding:16px;border:1px solid var(--border-color-low, #e5e7eb);border-radius:8px;background:var(--background-color-high, #ffffff);margin-bottom:12px;}
+	.feature-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
+	.feature-info-item{padding:10px 12px;border:1px solid var(--border-color-low, #e5e7eb);border-radius:6px;background:var(--background-color-low, #f5f5f5);}
+	.feature-info-label{display:block;font-size:13px;color:var(--text-color-medium, #6b7280);margin-bottom:4px;}
+	.feature-info-value{font-weight:600;font-size:15px;color:var(--text-color-high, #333);}
+	.feature-card {background: var(--background-color-high, #ffffff);border: 1px solid var(--border-color-low, #e5e7eb);border-radius: 8px;padding: 16px;margin-top: 12px;}
+	.feature-row {display: flex;align-items: center;gap: 12px;flex-wrap: wrap;}
+	.feature-label {min-width: 120px;font-weight: 600;}
+	.feature-inputs {display: flex;align-items: stretch;gap: 10px;flex: 1;flex-wrap: wrap;}
+	.feature-file {
+		width: 100%;
+		max-width: 360px;
+		height: 38px;
+		box-sizing: border-box;
+		padding: 4px 8px;
+		background: var(--background-color-high, #fff);
+		border: 1px solid var(--border-color-medium, #d1d5db);
+		border-radius: 4px;
+		color: var(--text-color-high, #333);
+		font-size: 13px;
+		line-height: 28px;
+	}
+	.feature-file::file-selector-button {
+		height: 28px;
+		margin: 0 8px 0 0;
+		padding: 0 12px;
+		border: 1px solid var(--border-color-medium, #d1d5db);
+		border-radius: 4px;
+		background: var(--background-color-low, #f5f5f5);
+		cursor: pointer;
+		font-size: 13px;
+		color: inherit;
+		vertical-align: middle;
+	}
+	.feature-file::-webkit-file-upload-button {
+		height: 28px;
+		margin: 0 8px 0 0;
+		padding: 0 12px;
+		border: 1px solid var(--border-color-medium, #d1d5db);
+		border-radius: 4px;
+		background: var(--background-color-low, #f5f5f5);
+		cursor: pointer;
+		font-size: 13px;
+		color: inherit;
+		vertical-align: middle;
+	}
+	.feature-btn {
+		min-width: 110px;
+		height: 38px;
+		box-sizing: border-box;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.feature-hint {margin-top: 10px;color: var(--text-color-medium, #6b7280);font-size: 13px;line-height: 1.5;}
+	.feature-status {margin-top: 8px;font-size: 14px;font-weight: 600;padding: 10px 14px;border-radius: 6px;line-height: 1.5;}
+	.feature-status.success {color: #065f46;background: #d1fae5;border: 1px solid #34d399;}
+	.feature-status.error {color: #991b1b;background: #fee2e2;border: 1px solid #f87171;}
+	.feature-modal {display: none;position: fixed;top: 0; left: 0; right: 0; bottom: 0;background-color: rgba(0, 0, 0, 0.5);z-index: 1000;justify-content: center;align-items: center;}
+	.feature-modal-content {background: var(--background-color-high, #ffffff);padding: 16px 20px;border-radius: 6px;color: var(--text-color-high, #333);min-width: 200px;text-align: center;box-shadow: 0 4px 12px rgba(0,0,0,0.4);border: 1px solid var(--border-color-low, #e5e7eb);}
+	.app-list {margin-top: 10px;}
+	.class-card {margin-bottom: 16px;border:1px solid var(--border-color-low, #e5e7eb);border-radius:8px;background:var(--background-color-high, #ffffff);}
+	.class-header {padding:12px 16px;font-weight:600;font-size:15px;border-bottom:1px solid var(--border-color-low, #e5e7eb);color:var(--text-color-high, #333);}
+	.app-items {display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 16px;}
+	.app-item {display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border-color-medium, #d1d5db);border-radius:6px;background:var(--background-color-low, #f5f5f5);font-size:13px;cursor:default;transition:all 0.2s ease;min-width:0;}
+	.app-item:hover {background:var(--background-color-medium, #eeeeee);border-color:var(--border-color-high, #9ca3af);transform:translateY(-1px);}
+	.app-item img {width:20px;height:20px;object-fit:contain;border-radius:4px;}
+	.app-item span {color:var(--text-color-medium, #6b7280);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
+	.app-items > * {min-width:0;}
+
+	@media (min-width: 800px) {
+		.app-items {grid-template-columns:repeat(6,1fr);}
+	}
+	@media (min-width: 1200px) {
+		.app-items {grid-template-columns:repeat(8,1fr);}
+	}
+	@media (max-width: 768px) {
+		.app-items {grid-template-columns:repeat(2,1fr);}
+		.app-item span {max-width:60px;}
+	}
+	.feature-inputs {flex-wrap: wrap;}
 </style>
 
 <script>
 	var pollTimer = null;
 	var pollTimeout = null;
 	var classListLoaded = false;
+	var appCountRaw = null;
+	var appCountUnique = null;
 
 	// Helper functions
 	function $(selector) {
@@ -129,14 +184,15 @@
 	}
 
 	function showToast(msg, type) {
-		var hint = $('#upload-hint');
-		if (!hint) return;
-		hint.textContent = msg || '';
-		hint.classList.remove('text-error', 'text-success');
+		var box = $('#upload-result');
+		if (!box) return;
+		box.textContent = msg || '';
+		box.style.display = msg ? '' : 'none';
+		box.classList.remove('success', 'error');
 		if (type === 'error') {
-			hint.classList.add('text-error');
+			box.classList.add('error');
 		} else if (type === 'success') {
-			hint.classList.add('text-success');
+			box.classList.add('success');
 		}
 	}
 
@@ -162,14 +218,14 @@
 	function renderUpgradeStatus(status) {
 		var box = $('#upgrade-status');
 		if (!box) return;
-		
+
 		if (!status || status === 0) {
 			box.style.display = 'none';
 			box.textContent = '';
 			box.classList.remove('success', 'error');
 			return;
 		}
-		
+
 		var msg = statusMessage(status);
 		box.textContent = msg;
 		box.style.display = '';
@@ -182,25 +238,80 @@
 	}
 
 	function fetchUpgradeStatusOnce() {
-		fetch('<%=url("admin/appfilter/feature/upgrade_status")%>')
+		return fetch('<%=url("admin/appfilter/feature/upgrade_status")%>')
 			.then(function(response) {
 				return response.json();
 			})
 			.then(function(resp) {
 				var status = (resp && resp.status) ? resp.status : 0;
 				renderUpgradeStatus(status);
+				return status;
 			})
 			.catch(function(error) {
 				console.error('Failed to fetch upgrade status:', error);
+				return 0;
 			});
 	}
 
 	function startUpgradeStatusPoll() {
 		showModal();
+		if (pollTimer) {
+			clearInterval(pollTimer);
+		}
+		pollTimer = setInterval(function() {
+			fetchUpgradeStatusOnce().then(function(status) {
+				if (status !== 0 && status !== 1) {
+					stopPoll();
+					hideModal();
+					if (status === 200) {
+						loadFeatureInfo();
+					}
+				}
+			});
+		}, 2000);
+		if (pollTimeout) {
+			clearTimeout(pollTimeout);
+		}
 		pollTimeout = setTimeout(function() {
 			stopPoll();
 			hideModal();
 		}, 60000);
+	}
+
+	function updateAppNumDisplay() {
+		if (appCountRaw === null && appCountUnique === null) return;
+		var appnumEl = $('#info-appnum');
+		if (!appnumEl) return;
+
+		if (appCountRaw !== null && appCountUnique !== null) {
+			if (appCountRaw === appCountUnique) {
+				appnumEl.textContent = String(appCountUnique);
+				appnumEl.removeAttribute('title');
+			} else {
+				appnumEl.textContent = appCountUnique + ' / ' + appCountRaw;
+				appnumEl.title = '<%:Unique%>: ' + appCountUnique +
+					'   <%:Total%>: ' + appCountRaw;
+			}
+		} else if (appCountUnique !== null) {
+			appnumEl.textContent = String(appCountUnique);
+		} else {
+			appnumEl.textContent = String(appCountRaw);
+		}
+	}
+
+	function countUniqueApps(list) {
+		if (!list || !list.length) return 0;
+		var total = 0;
+		list.forEach(function(category) {
+			var nameSet = new Set();
+			(category.app_list || []).forEach(function(app) {
+				var parts = app.split(',');
+				var name = parts[1] || 'Unknown';
+				nameSet.add(name);
+			});
+			total += nameSet.size;
+		});
+		return total;
 	}
 
 	function loadFeatureInfo() {
@@ -208,10 +319,11 @@
 			if (data && data.code === 0 && data.data) {
 				var versionEl = $('#info-version');
 				var formatEl = $('#info-format');
-				var appnumEl = $('#info-appnum');
 				if (versionEl) versionEl.textContent = data.data.version || '--';
 				if (formatEl) formatEl.textContent = data.data.format || '--';
-				if (appnumEl) appnumEl.textContent = data.data.app_count || 0;
+				appCountRaw = parseInt(data.data.app_count, 10);
+				if (isNaN(appCountRaw)) appCountRaw = null;
+				updateAppNumDisplay();
 			}
 		});
 	}
@@ -231,6 +343,8 @@
 					list = data.classes;
 				}
 				renderClassList(list);
+				appCountUnique = countUniqueApps(list);
+				updateAppNumDisplay();
 				classListLoaded = true;
 			})
 			.catch(function(error) {
@@ -242,29 +356,12 @@
 			});
 	}
 
-	function updateAppItemsColumns() {
-		var container = $('.feature-container');
-		var containerWidth = container ? container.offsetWidth : window.innerWidth;
-		var appItems = $$('.app-items');
-
-		var cols = 4;
-		if (containerWidth >= 1200) {
-			cols = 8;
-		} else if (containerWidth >= 800) {
-			cols = 6;
-		}
-
-		appItems.forEach(function(item) {
-			item.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-		});
-	}
-
 	function renderClassList(list) {
 		var container = $('#app-list');
 		if (!container) return;
-		
+
 		container.innerHTML = '';
-		
+
 		if (!list || list.length === 0) {
 			var noDataDiv = document.createElement('div');
 			noDataDiv.className = 'feature-hint';
@@ -272,76 +369,79 @@
 			container.appendChild(noDataDiv);
 			return;
 		}
-		
+
 		list.forEach(function(category) {
 			var appList = category.app_list || [];
 			var card = document.createElement('div');
 			card.className = 'class-card';
-			
+			var appMap = new Map();
+			appList.forEach(function(app) {
+				var parts = app.split(',');
+				var id = parts[0] || '';
+				var name = parts[1] || 'Unknown';
+				var hasIcon = parts[2] === '1';
+				if (appMap.has(name)) {
+					appMap.get(name).ids.push(id);
+				} else {
+					appMap.set(name, { ids: [id], name: name, hasIcon: hasIcon });
+				}
+			});
+
 			var categoryName = category.name || ('Class ' + (category.id || ''));
-			var appCount = appList.length;
-			
+			var appCount = appMap.size;
+
 			var header = document.createElement('div');
 			header.className = 'class-header';
 			header.textContent = categoryName + ' (' + appCount + ')';
 			card.appendChild(header);
-			
+
 			var apps = document.createElement('div');
 			apps.className = 'app-items';
-			
-			if (appList.length === 0) {
+
+			if (appMap.size === 0) {
 				var noAppsDiv = document.createElement('div');
 				noAppsDiv.className = 'feature-hint';
 				noAppsDiv.textContent = '<%:No apps%>';
 				apps.appendChild(noAppsDiv);
 			} else {
-				appList.forEach(function(app) {
-					var parts = app.split(',');
-					var appId = parts[0] || '';
-					var appName = parts[1] || 'Unknown';
-					var hasIcon = parts[2] === '1';
-					
+				appMap.forEach(function(appData) {
+					var appId = appData.ids[0];
+					var appName = appData.name;
+					var hasIcon = appData.hasIcon;
+
 					var appItem = document.createElement('div');
 					appItem.className = 'app-item';
-					
+
 					var iconSrc = hasIcon ? '<%=resource%>/app_icons/' + appId + '.png' : '<%=resource%>/app_icons/default.png';
 					var icon = document.createElement('img');
 					icon.src = iconSrc;
 					icon.alt = appName;
 					icon.onerror = function() {
+						this.onerror = null;
 						this.src = '<%=resource%>/app_icons/default.png';
 					};
-					
+
 					var name = document.createElement('span');
 					name.textContent = appName;
-					
+
+					if (appData.ids.length > 1) {
+						name.title = appName + ' (IDs: ' + appData.ids.join(', ') + ')';
+					}
+
 					appItem.appendChild(icon);
 					appItem.appendChild(name);
 					apps.appendChild(appItem);
 				});
 			}
-			
+
 			card.appendChild(apps);
 			container.appendChild(card);
 		});
-		
-		setTimeout(function() {
-			updateAppItemsColumns();
-		}, 100);
 	}
 
 	document.addEventListener('DOMContentLoaded', function() {
 		fetchUpgradeStatusOnce();
 		loadFeatureInfo();
 		loadClassList();
-
-		var resizeTimer;
-		window.addEventListener('resize', function() {
-			clearTimeout(resizeTimer);
-			resizeTimer = setTimeout(function() {
-				updateAppItemsColumns();
-			}, 200);
-		});
 	});
 </script>
-
