@@ -454,12 +454,26 @@ void update_lan_ip(void)
 	char mask_cmd_buf[128] = {0};
 	struct uci_context *ctx = uci_alloc_context();
 
-	if (!ctx)
+	if (!ctx) {
 		return;
+	}
 
 	int ret = af_uci_get_value(ctx, "appfilter.global.lan_ifname", lan_ifname, sizeof(lan_ifname) - 1);
-	if (ret != 0)
+	if (ret != 0) {
 		strcpy(lan_ifname, "br-lan");
+	}
+
+	for (char *p = lan_ifname; *p; p++) {
+		if (!((*p >= 'a' && *p <= 'z') ||
+		      (*p >= 'A' && *p <= 'Z') ||
+		      (*p >= '0' && *p <= '9') ||
+		      *p == '.' || *p == '_' || *p == '-')) {
+			LOG_WARN("invalid lan_ifname '%s', fallback to br-lan\n", lan_ifname);
+			strcpy(lan_ifname, "br-lan");
+			break;
+		}
+	}
+
 	sprintf(ip_cmd_buf, CMD_GET_LAN_IP_FMT, lan_ifname);
 	sprintf(mask_cmd_buf, CMD_GET_LAN_MASK_FMT, lan_ifname);
 

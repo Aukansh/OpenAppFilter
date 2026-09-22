@@ -200,6 +200,11 @@ void update_dev_nickname(void)
 	int num;
 	int i;
 
+	if (!uci_ctx) {
+		LOG_ERROR("uci_alloc_context failed in update_dev_nickname\n");
+		return;
+	}
+
 	clean_dev_nickname();
 	num = af_get_uci_list_num(uci_ctx, "user_info", "user_info");
 
@@ -346,7 +351,7 @@ void update_dev_from_kernel(void)
 		int parsed;
 		dev_node_t *node;
 
-		parsed = sscanf(line_buf, "%d %s %s %s %u %u", &id, mac_buf, ip_buf,
+		parsed = sscanf(line_buf, "%d %31s %31s %127s %u %u", &id, mac_buf, ip_buf,
 				ipv6_buf, &up_rate, &down_rate);
 		if (parsed < 3) {
 			printf("invalid line format:%s\n", line_buf);
@@ -602,7 +607,7 @@ void update_dev_visiting_info(void)
 	while (fgets(line_buf, sizeof(line_buf), fp)) {
 		dev_node_t *node;
 
-		sscanf(line_buf, "%s %s %s", mac_buf, app_buf, url_buf);
+		sscanf(line_buf, "%31s %31s %31s", mac_buf, app_buf, url_buf);
 		node = find_dev_node(mac_buf);
 		if (!node)
 			continue;

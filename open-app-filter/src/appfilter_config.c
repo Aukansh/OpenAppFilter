@@ -246,7 +246,18 @@ int af_uci_set_value(struct uci_context *ctx, char *key, char *value)
 	int ret = UCI_OK;
 	char param_tmp[2048] = {0};
 
-	sprintf(param_tmp, "%s=%s", key, value);
+	if (!ctx || !key || !value) {
+		return -1;
+	}
+
+	/* Reject anything that would not fit; the caller-supplied value comes
+	 * from a JSON payload and its length is not otherwise bounded. */
+	if (strlen(key) + strlen(value) + 2 > sizeof(param_tmp)) {
+		fprintf(stderr, "af_uci_set_value: key+value too long (%zu + %zu)\n",
+			strlen(key), strlen(value));
+		return -1;
+	}
+	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
 
 	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {

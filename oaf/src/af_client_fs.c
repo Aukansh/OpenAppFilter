@@ -181,15 +181,15 @@ static const struct proc_ops af_client_fops = {
 static int af_visiting_seq_show(struct seq_file *s, void *v)
 {
 	unsigned char mac_str[32] = {0};
-	static int index = 0;
+	struct af_client_iter_state *st = s->private;
 	af_client_info_t *node = (af_client_info_t *)v;
 
 	if (v == SEQ_START_TOKEN) {
-		index = 0;
+		st->index = 0;
 		seq_printf(s, "%-20s %-12s %-32s\n", "Mac", "Appid", "Url");
 		return 0;
 	}
-	index++;
+	st->index++;
 
 	sprintf(mac_str, MAC_FMT, MAC_ARRAY(node->mac));
 	int visiting_app = 0;
