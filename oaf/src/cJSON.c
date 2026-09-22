@@ -51,12 +51,12 @@ static void (*cJSON_free)(void *ptr) = free;
 
 static void *cJSON_malloc(size_t sz)
 {
-	return kmalloc(sz, GFP_KERNEL);
+	return kmalloc(sz, GFP_ATOMIC);
 }
 
 static void *cJSON_realloc(void *ptr, size_t sz)
 {
-	return krealloc(ptr, sz, GFP_KERNEL);
+	return krealloc(ptr, sz, GFP_ATOMIC);
 }
 
 static void cJSON_free(void *ptr)
