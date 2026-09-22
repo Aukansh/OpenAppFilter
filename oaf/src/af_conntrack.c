@@ -23,13 +23,9 @@ struct hlist_head af_conn_table[AF_CONN_HASH_SIZE];
 
 DEFINE_SPINLOCK(af_conn_lock);
 
-static u32 af_conn_hash(u32 src_ip, u32 dst_ip,
-			u16 src_port, u16 dst_port,
-			u8 protocol)
+static u32 af_conn_hash(u32 src_ip, u32 dst_ip, u16 src_port, u16 dst_port, u8 protocol)
 {
-	return jhash_3words(src_ip, dst_ip,
-			    ((u32)protocol << 16) | src_port,
-			    dst_port) % AF_CONN_HASH_SIZE;
+	return jhash_3words(src_ip, dst_ip, ((u32)protocol << 16) | src_port, dst_port) % AF_CONN_HASH_SIZE;
 }
 
 void af_conn_cleanup(void)
@@ -151,39 +147,54 @@ struct af_conn_iter_state
 
 static void *af_conn_seq_start(struct seq_file *s, loff_t *pos)
 {
-	struct af_conn_iter_state *st;
+	struct af_conn_iter_state *st = s->private;
+	struct hlist_node *node;
+	loff_t n = *pos;
 
-	if (*pos == 0) {
+	spin_lock_bh(&af_conn_lock);
+	if (n == 0) {
 		return SEQ_START_TOKEN;
 	}
-	st = s->private;
-	while (st->bucket < AF_CONN_HASH_SIZE) {
-		if (!hlist_empty(&(af_conn_table[st->bucket]))) {
-			return &af_conn_table[st->bucket++].first->next;
+	n--;
+
+	for (st->bucket = 0; st->bucket < AF_CONN_HASH_SIZE; st->bucket++) {
+		node = af_conn_table[st->bucket].first;
+		while (node) {
+			if (n == 0)
+				return node;
+			n--;
+			node = node->next;
 		}
-		st->bucket++;
 	}
 	return NULL;
 }
 
 static void *af_conn_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
+	struct af_conn_iter_state *st = s->private;
 	struct hlist_node *node;
 
 	(*pos)++;
 	if (v == SEQ_START_TOKEN) {
-		return NULL;
+		st->bucket = 0;
+	} else {
+		node = (struct hlist_node *)v;
+		if (node->next)
+			return node->next;
+		st->bucket++;
 	}
-	node = (struct hlist_node *)v;
-	node = node->next;
-	if (node != NULL) {
-		return node;
+
+	while (st->bucket < AF_CONN_HASH_SIZE) {
+		if (!hlist_empty(&af_conn_table[st->bucket]))
+			return af_conn_table[st->bucket].first;
+		st->bucket++;
 	}
 	return NULL;
 }
 
 static void af_conn_seq_stop(struct seq_file *s, void *v)
 {
+	spin_unlock_bh(&af_conn_lock);
 }
 
 static int af_conn_seq_show(struct seq_file *s, void *v)
