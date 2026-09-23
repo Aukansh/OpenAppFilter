@@ -125,8 +125,7 @@ dev_node_t *find_dev_node(char *mac)
 
 void dev_foreach(void *arg, iter_func iter)
 {
-	int i, j;
-	dev_node_t *node = NULL;
+	int i;
 
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *node = dev_hash_table[i];
@@ -166,7 +165,7 @@ void update_dev_hostname(void)
 
 		if (strlen(line_buf) <= 16)
 			continue;
-		sscanf(line_buf, "%*s %s %s %s", mac_buf, ip_buf, hostname_buf);
+		sscanf(line_buf, "%*s %31s %31s %127s", mac_buf, ip_buf, hostname_buf);
 		node = find_dev_node(mac_buf);
 		if (!node) {
 			node = add_dev_node(mac_buf);
@@ -400,7 +399,6 @@ void update_dev_online_status(void)
 int check_dev_expire(void)
 {
 	int i, j;
-	int count = 0;
 	int cur_time = get_timestamp();
 	int offline_time = 0;
 	int expire_count = 0;
@@ -439,8 +437,6 @@ NEXT:
 void flush_dev_expire_node(void)
 {
 	int i, j;
-	int count = 0;
-	dev_node_t *node = NULL;
 	dev_node_t *prev = NULL;
 
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
@@ -449,14 +445,28 @@ void flush_dev_expire_node(void)
 		prev = NULL;
 		while (node) {
 			if (node->expire) {
+				dev_node_t *expired = node;
+
+				/* Free visit records first to avoid leaking them */
+				for (j = 0; j < MAX_VISIT_HASH_SIZE; j++) {
+					visit_info_t *p_info = expired->visit_htable[j];
+
+					while (p_info) {
+						visit_info_t *next = p_info->next;
+
+						free(p_info);
+						p_info = next;
+					}
+				}
+
 				if (NULL == prev) {
-					dev_hash_table[i] = node->next;
-					free(node);
+					dev_hash_table[i] = expired->next;
+					free(expired);
 					node = dev_hash_table[i];
 					prev = NULL;
 				} else {
-					prev->next = node->next;
-					free(node);
+					prev->next = expired->next;
+					free(expired);
 					node = prev->next;
 				}
 			} else {
@@ -587,7 +597,7 @@ void load_user_time_from_file(void)
 	}
 
 	fclose(fp);
-	LOG_WARN("Loaded %d users' time data from %s\n", count, OAF_USER_FILE);
+	LOG_INFO("Loaded %d users' time data from %s\n", count, OAF_USER_FILE);
 }
 
 void update_dev_visiting_info(void)
@@ -687,7 +697,6 @@ void dump_dev_list(void)
 			node = node->next;
 		}
 	}
-EXIT:
 	fclose(fp);
 }
 
@@ -864,30 +873,17 @@ void check_and_reset_today_active_time(dev_node_t *node)
 {
 	time_t now;
 	struct tm *tm_info;
-	int current_hour;
-	int current_min;
-	static int last_reset_hour = -1;
-	static int last_reset_min = -1;
 
 	if (!node)
 		return;
 
 	now = time(NULL);
 	tm_info = localtime(&now);
-	current_hour = tm_info->tm_hour;
-	current_min = tm_info->tm_min;
 
-	if (current_hour == 12 && current_min == 0) {
-		if (last_reset_hour != 12 || last_reset_min != 0) {
-			LOG_DEBUG("Reset today_am_active_time for %s: %d -> 0 (12:00 reset)\n",
-				  node->mac, node->today_am_active_time);
-			node->today_am_active_time = 0;
-			last_reset_hour = 12;
-			last_reset_min = 0;
-		}
-	} else {
-		last_reset_hour = current_hour;
-		last_reset_min = current_min;
+	if (tm_info->tm_hour == 12 && tm_info->tm_min == 0) {
+		LOG_DEBUG("Reset today_am_active_time for %s: %d -> 0 (12:00 reset)\n",
+			  node->mac, node->today_am_active_time);
+		node->today_am_active_time = 0;
 	}
 }
 
@@ -952,6 +948,8 @@ void reset_all_users_today_flow(void)
 		while (node) {
 			node->today_down_bytes = 0;
 			node->today_up_bytes = 0;
+			node->last_up_bytes = 0;
+			node->last_down_bytes = 0;
 			node = node->next;
 		}
 	}
@@ -971,6 +969,8 @@ void check_all_users_period_time(void)
 
 			while (node) {
 				check_and_reset_today_active_time(node);
+				node->last_up_bytes   = node->today_up_bytes;
+				node->last_down_bytes = node->today_down_bytes;
 				node = node->next;
 			}
 		}
@@ -991,8 +991,12 @@ void check_all_users_period_time(void)
 		while (node) {
 			check_and_reset_today_active_time(node);
 
-			if (node->online && node->is_selected &&
-			    (node->up_rate > 0 || node->down_rate > 0)) {
+			int active = (node->today_up_bytes   > node->last_up_bytes) ||
+			             (node->today_down_bytes > node->last_down_bytes);
+			node->last_up_bytes   = node->today_up_bytes;
+			node->last_down_bytes = node->today_down_bytes;
+
+			if (node->online && node->is_selected && active) {
 				if (current_hour < 12)
 					node->today_am_active_time += minutes_elapsed;
 				else
@@ -1006,36 +1010,4 @@ void check_all_users_period_time(void)
 			node = node->next;
 		}
 	}
-}
-
-void save_user_active_time_to_file(void)
-{
-	FILE *fp = fopen(OAF_USER_FILE, "w");
-	int i;
-	int count = 0;
-
-	if (!fp) {
-		LOG_ERROR("Failed to open file for writing: %s\n", OAF_USER_FILE);
-		return;
-	}
-
-	fprintf(fp, "mac,today_am_active_time,today_pm_active_time\n");
-
-	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-		dev_node_t *node = dev_hash_table[i];
-
-		while (node) {
-			if (node->today_am_active_time > 0 || node->today_pm_active_time > 0) {
-				fprintf(fp, "%s,%u,%u\n",
-					node->mac,
-					node->today_am_active_time,
-					node->today_pm_active_time);
-				count++;
-			}
-			node = node->next;
-		}
-	}
-
-	fclose(fp);
-	LOG_DEBUG("Saved %d users' active time to %s\n", count, OAF_USER_FILE);
 }
