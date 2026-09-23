@@ -89,6 +89,11 @@ void af_log(LogLevel level, const char *format, ...)
 	vfprintf(log_file, format, args);
 	va_end(args);
 
+	size_t fmt_len = strlen(format);
+	if (fmt_len == 0 || format[fmt_len - 1] != '\n') {
+		fputc('\n', log_file);
+	}
+
 	fclose(log_file);
 	pthread_mutex_unlock(&af_log_mutex);
 }
