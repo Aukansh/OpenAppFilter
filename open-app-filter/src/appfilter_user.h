@@ -77,6 +77,8 @@ typedef struct dev_node
 	u_int32_t down_rate;
 	u_int64_t today_up_bytes;
 	u_int64_t today_down_bytes;
+	u_int64_t last_up_bytes;    /* previous sample of today_up_bytes */
+	u_int64_t last_down_bytes;  /* previous sample of today_down_bytes */
 	int active;
 	u_int32_t today_am_active_time;
 	u_int32_t today_pm_active_time;
