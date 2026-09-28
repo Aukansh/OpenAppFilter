@@ -1346,7 +1346,7 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 	af_uci_set_int_value(uci_ctx, "appfilter.time.time_mode", mode);
 
 	struct json_object *weekday_list_obj = json_object_object_get(req_obj, "weekday_list");
-	if (weekday_list_obj && (mode == 0 || mode == 1)) {
+	if (weekday_list_obj && (mode == 0 || mode == 1) && json_object_array_length(weekday_list_obj) > 0) {
 		char days_str[128] = {0};
 
 		for (int i = 0; i < json_object_array_length(weekday_list_obj); i++) {
@@ -1478,6 +1478,42 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 			}
 		}
 	}
+
+	if (mode == 0) {
+		/* Drop mode-1 (dynamic) keys */
+		af_uci_delete(uci_ctx, "appfilter.time.days");
+		af_uci_delete(uci_ctx, "appfilter.time.deny_time");
+		af_uci_delete(uci_ctx, "appfilter.time.allow_time");
+		af_uci_delete(uci_ctx, "appfilter.time.start_time");
+		af_uci_delete(uci_ctx, "appfilter.time.end_time");
+		/* Drop mode-2 (daily-limit) keys */
+		for (int i = 0; i < 7; i++) {
+			char key[64] = {0};
+			snprintf(key, sizeof(key),
+				 "appfilter.time.daily_limit_%d", i);
+			af_uci_delete(uci_ctx, key);
+		}
+	} else if (mode == 1) {
+		/* Drop mode-0 (fixed) key */
+		af_uci_delete(uci_ctx, "appfilter.time.time");
+		/* Drop mode-2 (daily-limit) keys */
+		for (int i = 0; i < 7; i++) {
+			char key[64] = {0};
+			snprintf(key, sizeof(key),
+				 "appfilter.time.daily_limit_%d", i);
+			af_uci_delete(uci_ctx, key);
+		}
+	} else if (mode == 2) {
+		/* Drop mode-0 (fixed) key */
+		af_uci_delete(uci_ctx, "appfilter.time.time");
+		/* Drop mode-1 (dynamic) keys */
+		af_uci_delete(uci_ctx, "appfilter.time.days");
+		af_uci_delete(uci_ctx, "appfilter.time.deny_time");
+		af_uci_delete(uci_ctx, "appfilter.time.allow_time");
+		af_uci_delete(uci_ctx, "appfilter.time.start_time");
+		af_uci_delete(uci_ctx, "appfilter.time.end_time");
+	}
+
 	af_uci_commit(uci_ctx, "appfilter");
 	g_oaf_config_change = 1;
 	if (g_enable_agent)
@@ -1865,6 +1901,18 @@ static int handle_del_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 			char buf[128] = {0};
 			sprintf(buf, "appfilter.@af_user[%d]", i);
 			af_uci_delete(uci_ctx, buf);
+			dev_node_t *dev = find_dev_node(mac_str);
+			if (dev) {
+				dev->is_selected = 0;
+				dev->blocked = 0;
+				dev->today_am_active_time = 0;
+				dev->today_pm_active_time = 0;
+				dev->today_up_bytes = 0;
+				dev->today_down_bytes = 0;
+				dev->last_up_bytes = 0;
+				dev->last_down_bytes = 0;
+				sync_blocked_macs_to_kernel();
+			}
 			break;
 		}
 	}

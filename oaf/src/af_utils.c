@@ -388,6 +388,11 @@ int mac_to_hex(u8 *mac, u8 *mac_hex)
 {
 	u32 mac_tmp[6];
 	int ret = 0, i = 0;
+
+	if (!mac || !mac_hex) {
+		return -1;
+	}
+
 	ret = sscanf(mac, "%02x:%02x:%02x:%02x:%02x:%02x",
 				 (unsigned int *)&mac_tmp[0],
 				 (unsigned int *)&mac_tmp[1],
