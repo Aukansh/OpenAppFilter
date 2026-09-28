@@ -43,18 +43,25 @@ char *k_trim(char *s)
 {
 	char *start, *last, *bk;
 	int len;
+	size_t n;
+
+	if (!s)
+		return s;
+
+	n = strlen(s);
+	if (n == 0)
+		return s;
 
 	start = s;
 	while (isspace(*start))
 		start++;
 
-	bk = last = s + strlen(s) - 1;
+	bk = last = s + n - 1;
 	while (last > start && isspace(*last))
 		last--;
 
-	if ((s != start) || (bk != last))
-	{
-		len = last - start + 1;
+	if ((s != start) || (bk != last)) {
+		len = (int)(last - start + 1);
 		strncpy(s, start, len);
 		s[len] = '\0';
 	}
@@ -402,8 +409,7 @@ int mac_to_hex(u8 *mac, u8 *mac_hex)
 				 (unsigned int *)&mac_tmp[5]);
 	if (6 != ret)
 		return -1;
-	for (i = 0; i < 6; i++)
-	{
+	for (i = 0; i < 6; i++) {
 		mac_hex[i] = mac_tmp[i];
 	}
 	return 0;
