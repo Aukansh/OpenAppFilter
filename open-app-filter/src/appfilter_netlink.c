@@ -43,7 +43,6 @@ THE SOFTWARE.
 #define REPORT_INTERVAL_SECS	60
 
 extern int hash_appid(int appid);
-extern unsigned int g_feature_update_time;
 
 void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 {
