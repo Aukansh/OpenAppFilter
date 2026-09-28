@@ -47,11 +47,10 @@ static void *af_client_get_first(struct seq_file *seq)
 	return NULL;
 }
 
-static void *af_client_get_next(struct seq_file *seq,
-				void *head)
+static void *af_client_get_next(struct seq_file *seq, void *head)
 {
 	struct af_client_iter_state *st = seq->private;
-	struct hlist_node *node = (struct hlist_node *)head;
+	struct list_head *node = (struct list_head *)head;
 
 	node = node->next;
 	if (node != st->head) {
