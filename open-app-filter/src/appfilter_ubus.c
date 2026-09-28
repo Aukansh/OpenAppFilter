@@ -73,7 +73,7 @@ void get_hostname_by_mac(char *mac, char *hostname)
 		char mac_buf[32] = {0};
 
 		sscanf(line_buf, "%*s %s %*s %s", mac_buf, hostname_buf);
-		if (0 == strcmp(mac, mac_buf))
+		if (0 == strcasecmp(mac, mac_buf))
 			strcpy(hostname, hostname_buf);
 	}
 	fclose(fp);
@@ -934,26 +934,18 @@ static int handle_set_app_filter_base(struct ubus_context *ctx, struct ubus_obje
 	if (record_enable_obj)
 		af_uci_set_int_value(uci_ctx, "appfilter.global.record_enable",
 				     json_object_get_int(record_enable_obj));
-	else
-		af_uci_set_int_value(uci_ctx, "appfilter.global.record_enable", 0);
 
 	if (disable_quic_obj)
 		af_uci_set_int_value(uci_ctx, "appfilter.global.disable_quic",
 				     json_object_get_int(disable_quic_obj));
-	else
-		af_uci_set_int_value(uci_ctx, "appfilter.global.disable_quic", 0);
 
 	if (app_filter_mode_obj)
 		af_uci_set_int_value(uci_ctx, "appfilter.global.app_filter_mode",
 				     json_object_get_int(app_filter_mode_obj));
-	else
-		af_uci_set_int_value(uci_ctx, "appfilter.global.app_filter_mode", 0);
 
 	if (daily_limit_mode_obj)
 		af_uci_set_int_value(uci_ctx, "appfilter.global.daily_limit_mode",
 				     json_object_get_int(daily_limit_mode_obj));
-	else
-		af_uci_set_int_value(uci_ctx, "appfilter.global.daily_limit_mode", 0);
 
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
@@ -1605,12 +1597,10 @@ void all_users_callback(void *arg, dev_node_t *dev)
 
 		json_object_object_add(user_obj, "up_rate", json_object_new_int(dev->up_rate / 1024));
 		json_object_object_add(user_obj, "down_rate", json_object_new_int(dev->down_rate / 1024));
-		u_int32_t up_flow = (u_int32_t)(dev->today_up_bytes / 1024);
-		u_int32_t down_flow = (u_int32_t)(dev->today_down_bytes / 1024);
-		json_object_object_add(user_obj, "up_rate", json_object_new_int(dev->up_rate / 1024));
-		json_object_object_add(user_obj, "down_rate", json_object_new_int(dev->down_rate / 1024));
-		json_object_object_add(user_obj, "today_up_flow", json_object_new_int(up_flow));
-		json_object_object_add(user_obj, "today_down_flow", json_object_new_int(down_flow));
+		json_object_object_add(user_obj, "today_up_flow",
+		json_object_new_int64((int64_t)(dev->today_up_bytes / 1024)));
+		json_object_object_add(user_obj, "today_down_flow",
+		json_object_new_int64((int64_t)(dev->today_down_bytes / 1024)));
 	}
 	json_object_array_add(users_array, user_obj);
 }
@@ -1895,7 +1885,7 @@ static int handle_del_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 	for (int i = 0; i < num; i++) {
 		af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].mac", i,
 				       mac_str, sizeof(mac_str));
-		if (strcmp(mac_str, json_object_get_string(mac_obj)) == 0) {
+		if (strcasecmp(mac_str, json_object_get_string(mac_obj)) == 0) {
 			printf("delete af_user[%d]\n", i);
 
 			char buf[128] = {0};
@@ -1975,10 +1965,12 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 	printf("len: %d\n", len);
 	for (int i = 0; i < len; i++) {
 		struct json_object *mac_obj = json_object_array_get_idx(mac_array, i);
+		char mac_lower[32] = {0};
+		const char *mac_src = json_object_get_string(mac_obj);
+		mac_copy_lower(mac_lower, mac_src ? mac_src : "", sizeof(mac_lower));
 
 		af_uci_add_section(uci_ctx, "appfilter", "af_user");
-		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].mac",
-				 (char *)json_object_get_string(mac_obj));
+		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].mac", mac_lower);
 	}
 	printf("add af_user ok\n");
 	af_uci_commit(uci_ctx, "appfilter");
@@ -2039,7 +2031,7 @@ static int handle_set_nickname(struct ubus_context *ctx, struct ubus_object *obj
 	for (int i = 0; i < num; i++) {
 		af_uci_get_array_value(uci_ctx, "user_info.@user_info[%d].mac", i,
 				       mac_str, sizeof(mac_str));
-		if (strcmp(mac_str, json_object_get_string(mac_obj)) == 0) {
+		if (strcasecmp(mac_str, json_object_get_string(mac_obj)) == 0) {
 			index = i;
 			printf("found nickname index: %d\n", index);
 			break;
@@ -2307,10 +2299,12 @@ static int handle_add_whitelist_user(struct ubus_context *ctx, struct ubus_objec
 	int len = json_object_array_length(mac_array);
 	for (int i = 0; i < len; i++) {
 		struct json_object *mac_obj = json_object_array_get_idx(mac_array, i);
+		char mac_lower[32] = {0};
+		const char *mac_src = json_object_get_string(mac_obj);
+		mac_copy_lower(mac_lower, mac_src ? mac_src : "", sizeof(mac_lower));
 
 		af_uci_add_section(uci_ctx, "appfilter", "whitelist");
-		af_uci_set_value(uci_ctx, "appfilter.@whitelist[-1].mac",
-				 (char *)json_object_get_string(mac_obj));
+		af_uci_set_value(uci_ctx, "appfilter.@whitelist[-1].mac", mac_lower);
 	}
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
@@ -2404,7 +2398,7 @@ static int handle_del_whitelist_user(struct ubus_context *ctx, struct ubus_objec
 	for (int i = 0; i < num; i++) {
 		af_uci_get_array_value(uci_ctx, "appfilter.@whitelist[%d].mac", i,
 				       mac_str, sizeof(mac_str));
-		if (strcmp(mac_str, json_object_get_string(mac_obj)) == 0) {
+		if (strcasecmp(mac_str, json_object_get_string(mac_obj)) == 0) {
 			char buf[128] = {0};
 			sprintf(buf, "appfilter.@whitelist[%d]", i);
 			af_uci_delete(uci_ctx, buf);
