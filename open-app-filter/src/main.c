@@ -194,6 +194,44 @@ int af_load_time_config(af_time_config_t *t_config)
 		} while (p != NULL);
 	}
 
+	for (int weekday = 0; weekday < 7; weekday++) {
+		char uci_key[64] = {0};
+		char daily_limit_str[128] = {0};
+
+		snprintf(uci_key, sizeof(uci_key),
+			 "appfilter.time.daily_limit_%d", weekday);
+		af_uci_get_value(ctx, uci_key, daily_limit_str,
+				 sizeof(daily_limit_str));
+
+		t_config->daily_limit[weekday].enable = 0;
+		t_config->daily_limit[weekday].am_time = 0;
+		t_config->daily_limit[weekday].pm_time = 0;
+
+		if (strlen(daily_limit_str) > 0) {
+			char *first_colon = strchr(daily_limit_str, ':');
+			if (first_colon) {
+				char *second_colon = strchr(first_colon + 1, ':');
+				if (second_colon) {
+					t_config->daily_limit[weekday].enable = atoi(daily_limit_str);
+					t_config->daily_limit[weekday].am_time = atoi(first_colon + 1);
+					t_config->daily_limit[weekday].pm_time = atoi(second_colon + 1);
+				} else {
+					t_config->daily_limit[weekday].enable = 1;
+					t_config->daily_limit[weekday].am_time = atoi(daily_limit_str);
+					t_config->daily_limit[weekday].pm_time = atoi(first_colon + 1);
+				}
+			} else {
+				t_config->daily_limit[weekday].enable = 1;
+				t_config->daily_limit[weekday].am_time = atoi(daily_limit_str);
+			}
+		}
+		printf("af_load_time_config: daily_limit[%d] enable=%d, am=%d, pm=%d\n",
+		       weekday,
+		       t_config->daily_limit[weekday].enable,
+		       t_config->daily_limit[weekday].am_time,
+		       t_config->daily_limit[weekday].pm_time);
+	}
+
 	af_uci_get_list_value(ctx, "appfilter.time.time", time_list_buf, sizeof(time_list_buf), " ");
 	printf("af_load_time_config: time_list_buf from uci: %s\n", time_list_buf);
 
@@ -284,48 +322,6 @@ int af_load_time_config(af_time_config_t *t_config)
 	} while ((p = strtok_r(NULL, " ", &saveptr1)) != NULL);
 
 	printf("af_load_time_config: total periods loaded: %d\n", t_config->time_num);
-
-	/* Load mode 2 daily limit config (if time_mode is 2) */
-	if (t_config->time_mode == 2) {
-		for (int weekday = 0; weekday < 7; weekday++) {
-			char uci_key[64] = {0};
-			char daily_limit_str[128] = {0};
-
-			snprintf(uci_key, sizeof(uci_key), "appfilter.time.daily_limit_%d", weekday);
-			af_uci_get_value(ctx, uci_key, daily_limit_str, sizeof(daily_limit_str));
-
-			/* Initialize to default values */
-			t_config->daily_limit[weekday].enable = 0;
-			t_config->daily_limit[weekday].am_time = 0;
-			t_config->daily_limit[weekday].pm_time = 0;
-
-			/* Parse format: "enable:am_time:pm_time" */
-			if (strlen(daily_limit_str) > 0) {
-				char *first_colon = strchr(daily_limit_str, ':');
-				if (first_colon) {
-					char *second_colon = strchr(first_colon + 1, ':');
-					if (second_colon) {
-						/* New format: "enable:am_time:pm_time" */
-						t_config->daily_limit[weekday].enable = atoi(daily_limit_str);
-						t_config->daily_limit[weekday].am_time = atoi(first_colon + 1);
-						t_config->daily_limit[weekday].pm_time = atoi(second_colon + 1);
-					} else {
-						/* Old format: "am_time:pm_time" */
-						t_config->daily_limit[weekday].enable = 1;
-						t_config->daily_limit[weekday].am_time = atoi(daily_limit_str);
-						t_config->daily_limit[weekday].pm_time = atoi(first_colon + 1);
-					}
-				} else {
-					t_config->daily_limit[weekday].enable = 1;
-					t_config->daily_limit[weekday].am_time = atoi(daily_limit_str);
-				}
-			}
-			printf("af_load_time_config: daily_limit[%d] enable=%d, am_time=%d, pm_time=%d\n",
-			       weekday, t_config->daily_limit[weekday].enable,
-			       t_config->daily_limit[weekday].am_time,
-			       t_config->daily_limit[weekday].pm_time);
-		}
-	}
 
 EXIT:
 	uci_free_context(ctx);
@@ -1031,6 +1027,7 @@ int main(int argc, char **argv)
 	init_dev_node_htable();
 
 	load_user_time_from_file();
+	check_all_users_period_time();
 
 	if (appfilter_ubus_init() < 0) {
 		LOG_ERROR("Failed to connect to ubus\n");
