@@ -444,6 +444,7 @@ static void load_feature_buf_from_file(char **config_buf)
 	inode = fp->f_inode;
 	size = inode->i_size;
 	if (size == 0) {
+		filp_close(fp, NULL);
 		return;
 	}
 	*config_buf = (char *)kzalloc(sizeof(char) * size, GFP_ATOMIC);
@@ -1054,14 +1055,17 @@ static int match_app_filter_rule(int appid, u_int8_t *mac)
 static int af_get_visit_index(af_client_info_t *node, int app_id)
 {
 	int i;
+	int empty_index = -1;
 
 	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
-		if (node->visit_info[i].app_id == app_id || node->visit_info[i].app_id == 0) {
+		if (node->visit_info[i].app_id == app_id) {
 			return i;
 		}
+		if (node->visit_info[i].app_id == 0 && empty_index < 0) {
+			empty_index = i;
+		}
 	}
-	// default 0
-	return 0;
+	return empty_index;
 }
 
 static int af_update_client_app_info(af_client_info_t *node, int app_id, int drop)
@@ -1413,6 +1417,32 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 
 	if (!strstr(dev->name, g_lan_ifname)) {
 		return NF_ACCEPT;
+	}
+
+	if (g_app_filter_mode == 1 && g_oaf_filter_enable) {
+		u_int8_t pre_mac[ETH_ALEN] = {0};
+		struct ethhdr *pre_eth = eth_hdr(skb);
+		int need_drop = 1;
+
+		if (pre_eth) {
+			memcpy(pre_mac, pre_eth->h_source, ETH_ALEN);
+		} else {
+			memcpy(pre_mac, &skb->cb[40], ETH_ALEN);
+		}
+
+		if (match_app_filter_user(pre_mac)) {
+			if (g_daily_limit_mode == 1 &&
+			    !af_blocked_mac_find(pre_mac)) {
+				need_drop = 0;
+			}
+			if (need_drop) {
+				AF_LMT_INFO("all-apps mode: drop packet, mac="
+					    MAC_FMT ", proto=%d\n",
+					    MAC_ARRAY(pre_mac),
+					    skb->protocol == htons(ETH_P_IP) ? ip_hdr(skb)->protocol : -1);
+				return NF_DROP;
+			}
+		}
 	}
 
 	memset((char *)&flow, 0x0, sizeof(flow_info_t));
