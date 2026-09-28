@@ -35,15 +35,14 @@ int g_app_count = 0;
 int g_cur_class_num = 0;
 char CLASS_NAME_TABLE[MAX_APP_TYPE][MAX_CLASS_NAME_LEN];
 
-const char *config_path = "./config";
 static struct uci_context *uci_ctx = NULL;
 static struct uci_package *uci_appfilter;
 
 static pthread_mutex_t af_log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static FILE *af_log_fp = NULL;
 
 void af_log(LogLevel level, const char *format, ...)
 {
-	FILE *log_file;
 	time_t now;
 	struct tm *t;
 	char time_str[20];
@@ -54,11 +53,13 @@ void af_log(LogLevel level, const char *format, ...)
 		return;
 
 	pthread_mutex_lock(&af_log_mutex);
-	log_file = fopen(LOG_FILE_PATH, "a");
-	if (!log_file) {
-		perror("Failed to open log file");
-		pthread_mutex_unlock(&af_log_mutex);
-		return;
+	if (!af_log_fp) {
+		af_log_fp = fopen(LOG_FILE_PATH, "a");
+		if (!af_log_fp) {
+			perror("Failed to open log file");
+			pthread_mutex_unlock(&af_log_mutex);
+			return;
+		}
 	}
 
 	now = time(NULL);
@@ -83,18 +84,18 @@ void af_log(LogLevel level, const char *format, ...)
 		break;
 	}
 
-	fprintf(log_file, "[%s] [%s] ", time_str, level_str);
+	fprintf(af_log_fp, "[%s] [%s] ", time_str, level_str);
 
 	va_start(args, format);
-	vfprintf(log_file, format, args);
+	vfprintf(af_log_fp, format, args);
 	va_end(args);
 
 	size_t fmt_len = strlen(format);
 	if (fmt_len == 0 || format[fmt_len - 1] != '\n') {
-		fputc('\n', log_file);
+		fputc('\n', af_log_fp);
 	}
 
-	fclose(log_file);
+	fflush(af_log_fp);
 	pthread_mutex_unlock(&af_log_mutex);
 }
 
@@ -139,7 +140,7 @@ int af_uci_get_value(struct uci_context *ctx, char *key, char *output, int out_l
 	int ret = UCI_OK;
 	char param_tmp[128] = {0};
 
-	if (!key || strlen(key) >= sizeof(param_tmp)) {
+	if (!key || !output || out_len <= 0 || strlen(key) >= sizeof(param_tmp)) {
 		return 1;
 	}
 	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
@@ -474,8 +475,6 @@ static struct uci_package *config_init_package(const char *config)
 		ctx = uci_alloc_context();
 		uci_ctx = ctx;
 		ctx->flags &= ~UCI_FLAG_STRICT;
-		//if (config_path)
-		//	uci_set_confdir(ctx, config_path);
 	} else {
 		p = uci_lookup_package(ctx, config);
 		if (p)
