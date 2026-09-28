@@ -949,7 +949,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		check_all_users_period_time();
 		dump_dev_list();
 	}
-	if (count % 300 == 0 && count > 0 && g_af_config.time.time_mode == 2)
+	if (count % 600 == 0 && count > 0 && g_af_config.time.time_mode == 2)
 		save_user_time_to_file();
 	if (g_oaf_config_change == 1) {
 		LOG_INFO("config changed\n");
