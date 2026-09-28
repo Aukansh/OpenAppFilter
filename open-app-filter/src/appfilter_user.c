@@ -523,18 +523,48 @@ void flush_offline_users(void)
 	LOG_WARN("Cleared %d offline users\n", count);
 }
 
+static void get_boot_id(char *buf, int len)
+{
+	FILE *fp;
+	int l;
+
+	if (!buf || len <= 0)
+		return;
+
+	buf[0] = '\0';
+	fp = fopen("/proc/sys/kernel/random/boot_id", "r");
+	if (!fp)
+		return;
+	if (fgets(buf, len, fp) == NULL)
+		buf[0] = '\0';
+	fclose(fp);
+
+	/* strip trailing CR/LF */
+	l = strlen(buf);
+	while (l > 0 && (buf[l - 1] == '\n' || buf[l - 1] == '\r'))
+		buf[--l] = '\0';
+}
+
 void save_user_time_to_file(void)
 {
 	int i;
 	int count = 0;
 	FILE *fp = fopen(OAF_USER_FILE, "w");
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	char boot_id[64] = {0};
 
 	if (!fp) {
 		LOG_ERROR("Failed to open file %s for writing\n", OAF_USER_FILE);
 		return;
 	}
 
-	fprintf(fp, "MAC,AM_Time,PM_Time\n");
+	get_boot_id(boot_id, sizeof(boot_id));
+	if (boot_id[0] != '\0') {
+		fprintf(fp, "#%04d-%02d-%02d %s\n", tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday, boot_id);
+	} else {
+		fprintf(fp, "#%04d-%02d-%02d\n", tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday);
+	}
 
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *node = dev_hash_table[i];
@@ -558,6 +588,9 @@ void load_user_time_from_file(void)
 	FILE *fp = fopen(OAF_USER_FILE, "r");
 	char line_buf[256] = {0};
 	int count = 0;
+	int file_year = 0, file_mon = 0, file_mday = 0;
+	char file_boot_id[64] = {0};
+	char cur_boot_id[64] = {0};
 
 	if (!fp) {
 		LOG_DEBUG("File %s not found or cannot be opened, starting with empty data\n",
@@ -569,6 +602,32 @@ void load_user_time_from_file(void)
 		fclose(fp);
 		return;
 	}
+
+	if (sscanf(line_buf, "#%d-%d-%d %63s", &file_year, &file_mon, &file_mday, file_boot_id) < 3) {
+		LOG_INFO("user_list.dat has no date header, skipping load\n");
+		fclose(fp);
+		return;
+	}
+
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	if (file_year != tm_info->tm_year + 1900 || file_mon  != tm_info->tm_mon + 1 || file_mday != tm_info->tm_mday) {
+		LOG_INFO("user_list.dat is from %04d-%02d-%02d, today is %04d-%02d-%02d, skipping load\n",
+			 file_year, file_mon, file_mday, tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday);
+		fclose(fp);
+		return;
+	}
+
+	get_boot_id(cur_boot_id, sizeof(cur_boot_id));
+	if (strlen(file_boot_id) > 0 &&
+	    strlen(cur_boot_id) > 0 &&
+	    strcmp(file_boot_id, cur_boot_id) != 0) {
+		LOG_INFO("system reboot detected (boot_id changed), skipping load\n");
+		fclose(fp);
+		return;
+	}
+
+	LOG_INFO("Loading today's user time data from %s\n", OAF_USER_FILE);
 
 	while (fgets(line_buf, sizeof(line_buf), fp)) {
 		char mac[32] = {0};
@@ -869,23 +928,6 @@ void clear_device_app_statistics(void)
 	}
 }
 
-void check_and_reset_today_active_time(dev_node_t *node)
-{
-	time_t now;
-	struct tm *tm_info;
-
-	if (!node)
-		return;
-
-	now = time(NULL);
-	tm_info = localtime(&now);
-
-	if (tm_info->tm_hour == 12 && tm_info->tm_min == 0) {
-		LOG_DEBUG("Reset today_am_active_time for %s: %d -> 0 (12:00 reset)\n",
-			  node->mac, node->today_am_active_time);
-		node->today_am_active_time = 0;
-	}
-}
 
 void reset_all_users_today_active_time(void)
 {
@@ -968,12 +1010,12 @@ void check_all_users_period_time(void)
 			dev_node_t *node = dev_hash_table[i];
 
 			while (node) {
-				check_and_reset_today_active_time(node);
 				node->last_up_bytes   = node->today_up_bytes;
 				node->last_down_bytes = node->today_down_bytes;
 				node = node->next;
 			}
 		}
+
 		return;
 	}
 
@@ -989,8 +1031,6 @@ void check_all_users_period_time(void)
 		dev_node_t *node = dev_hash_table[i];
 
 		while (node) {
-			check_and_reset_today_active_time(node);
-
 			int active = (node->today_up_bytes   > node->last_up_bytes) ||
 			             (node->today_down_bytes > node->last_down_bytes);
 			node->last_up_bytes   = node->today_up_bytes;
