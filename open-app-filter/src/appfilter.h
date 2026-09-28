@@ -91,5 +91,6 @@ typedef struct af_run_time_status {
 void af_log(LogLevel level, const char *format, ...);
 void sync_blocked_macs_to_kernel(void);
 extern af_config_t g_af_config;
+extern int g_feature_update_time;
 
 #endif
