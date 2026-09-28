@@ -141,7 +141,7 @@ static const char *parse_number(cJSON *item, const char *num)
 			n = (n * 10) + (*num++ - '0');
 		} while (*num >= '0' && *num <= '9');	/* Number? */
 	}
-	item->valueint = (int)n;
+	item->valueint = sign * (int)n;
 	item->type = cJSON_Number;
 	return num;
 }
