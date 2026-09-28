@@ -39,6 +39,24 @@ THE SOFTWARE.
 dev_node_t *dev_hash_table[MAX_DEV_NODE_HASH_SIZE];
 int g_cur_user_num = 0;
 
+void mac_copy_lower(char *dst, const char *src, size_t dst_len)
+{
+	size_t i = 0;
+
+	if (!dst || !src || dst_len == 0)
+		return;
+
+	while (i + 1 < dst_len && src[i] != '\0') {
+		char c = src[i];
+
+		if (c >= 'A' && c <= 'Z')
+			c = (char)(c + ('a' - 'A'));
+		dst[i] = c;
+		i++;
+	}
+	dst[i] = '\0';
+}
+
 unsigned int hash_mac(unsigned char *mac)
 {
 	unsigned int hash = 0;
@@ -47,8 +65,13 @@ unsigned int hash_mac(unsigned char *mac)
 	if (!mac) {
 		return 0;
 	}
-	for (i = 0; mac[i] != '\0' && i < MAX_MAC_LEN; i++)
-		hash = hash * 31 + mac[i];
+	for (i = 0; mac[i] != '\0' && i < MAX_MAC_LEN; i++) {
+		unsigned char c = mac[i];
+
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c + ('a' - 'A'));
+		hash = hash * 31 + c;
+	}
 	return hash & (MAX_DEV_NODE_HASH_SIZE - 1);
 }
 
@@ -89,7 +112,7 @@ dev_node_t *add_dev_node(char *mac)
 	node = (dev_node_t *)calloc(1, sizeof(dev_node_t));
 	if (!node)
 		return NULL;
-	strncpy(node->mac, mac, sizeof(node->mac));
+	mac_copy_lower(node->mac, mac, sizeof(node->mac));
 	node->online = 0;
 	node->online_time = get_timestamp();
 	node->offline_time = get_timestamp();
@@ -100,7 +123,7 @@ dev_node_t *add_dev_node(char *mac)
 		dev_hash_table[hash] = node;
 	}
 	g_cur_user_num++;
-	printf("add mac:%s to htable[%d]....success\n", mac, hash);
+	printf("add mac:%s to htable[%d]....success\n", node->mac, hash);
 	return node;
 }
 
@@ -116,7 +139,7 @@ dev_node_t *find_dev_node(char *mac)
 	}
 	p = dev_hash_table[hash];
 	while (p) {
-		if (0 == strncmp(p->mac, mac, sizeof(p->mac)))
+		if (0 == strcasecmp(p->mac, mac))
 			return p;
 		p = p->next;
 	}
