@@ -30,7 +30,7 @@ THE SOFTWARE.
 #define MAX_HOSTNAME_SIZE 64
 #define OAF_VISIT_LIST_FILE "/tmp/visit_list"
 #define OAF_DEV_LIST_FILE "/tmp/dev_list"
-#define OAF_USER_FILE "/etc/user_list.dat"
+#define OAF_USER_FILE "/tmp/user_list.dat"
 #define MIN_VISIT_TIME 5 // default 5s
 #define MAX_APP_STAT_NUM 8
 #define MAX_VISITLIST_DUMP_NUM 16
@@ -133,5 +133,6 @@ void reset_all_users_today_flow(void);
 
 void check_all_users_period_time(void);
 void update_dev_online_status(void);
+void mac_copy_lower(char *dst, const char *src, size_t dst_len);
 
 #endif
