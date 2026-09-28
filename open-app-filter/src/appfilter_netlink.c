@@ -106,6 +106,13 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 	}
 
 	char *kdata = kmsg + sizeof(struct af_msg_hdr);
+	size_t kdata_off = (size_t)(kdata - buf);
+	if (kdata_off + (size_t)af_hdr->len >= sizeof(buf)) {
+		printf("netlink data offset overflow\n");
+		return;
+	}
+	kdata[af_hdr->len] = '\0';
+
 	struct json_object *root = json_tokener_parse(kdata);
 	if (!root) {
 		printf("parse json failed:%s", kdata);
