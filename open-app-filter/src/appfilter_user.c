@@ -575,19 +575,13 @@ void save_user_time_to_file(void)
 	FILE *fp = fopen(OAF_USER_FILE, "w");
 	time_t now = time(NULL);
 	struct tm *tm_info = localtime(&now);
-	char boot_id[64] = {0};
 
 	if (!fp) {
 		LOG_ERROR("Failed to open file %s for writing\n", OAF_USER_FILE);
 		return;
 	}
 
-	get_boot_id(boot_id, sizeof(boot_id));
-	if (boot_id[0] != '\0') {
-		fprintf(fp, "#%04d-%02d-%02d %s\n", tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday, boot_id);
-	} else {
-		fprintf(fp, "#%04d-%02d-%02d\n", tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday);
-	}
+	fprintf(fp, "#%04d-%02d-%02d\n", tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday);
 
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *node = dev_hash_table[i];
@@ -613,7 +607,6 @@ void load_user_time_from_file(void)
 	int count = 0;
 	int file_year = 0, file_mon = 0, file_mday = 0;
 	char file_boot_id[64] = {0};
-	char cur_boot_id[64] = {0};
 
 	if (!fp) {
 		LOG_DEBUG("File %s not found or cannot be opened, starting with empty data\n",
@@ -640,16 +633,6 @@ void load_user_time_from_file(void)
 		fclose(fp);
 		return;
 	}
-
-	get_boot_id(cur_boot_id, sizeof(cur_boot_id));
-	if (strlen(file_boot_id) > 0 &&
-	    strlen(cur_boot_id) > 0 &&
-	    strcmp(file_boot_id, cur_boot_id) != 0) {
-		LOG_INFO("system reboot detected (boot_id changed), skipping load\n");
-		fclose(fp);
-		return;
-	}
-
 	LOG_INFO("Loading today's user time data from %s\n", OAF_USER_FILE);
 
 	while (fgets(line_buf, sizeof(line_buf), fp)) {
