@@ -13,17 +13,25 @@ char *str_trim(char *s)
 {
 	char *start, *last, *bk;
 	int len;
+	size_t n;
+
+	if (!s)
+		return s;
+
+	n = strlen(s);
+	if (n == 0)
+		return s;
 
 	start = s;
 	while (isspace(*start))
 		start++;
 
-	bk = last = s + strlen(s) - 1;
+	bk = last = s + n - 1;
 	while (last > start && isspace(*last))
 		last--;
 
 	if ((s != start) || (bk != last)) {
-		len = last - start + 1;
+		len = (int)(last - start + 1);
 		strncpy(s, start, len);
 		s[len] = '\0';
 	}

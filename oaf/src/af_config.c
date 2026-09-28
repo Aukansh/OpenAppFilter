@@ -129,7 +129,6 @@ static int af_cdev_open(struct inode *inode, struct file *filp)
 	if (!file)
 		return -EINVAL;
 
-	mutex_lock(&af_cdev_mutex);
 	filp->private_data = file;
 	return 0;
 }
@@ -142,10 +141,14 @@ static ssize_t af_cdev_read(struct file *filp, char *buf, size_t count, loff_t *
 static int af_cdev_release(struct inode *inode, struct file *filp)
 {
 	struct af_cdev_file *file = filp->private_data;
+	if (!file)
+		return 0;
 	AF_DEBUG("config size: %d,data = %s\n", (int)file->size, file->buf);
+
+	mutex_lock(&af_cdev_mutex);
 	af_config_handle(file->buf, file->size);
-	filp->private_data = NULL;
 	mutex_unlock(&af_cdev_mutex);
+	filp->private_data = NULL;
 	vfree(file);
 	return 0;
 }
@@ -154,8 +157,7 @@ static ssize_t af_cdev_write(struct file *filp, const char *buffer, size_t count
 {
 	struct af_cdev_file *file = filp->private_data;
 	int ret;
-	if (file->size + count > sizeof(file->buf))
-	{
+	if (file->size + count > sizeof(file->buf)) {
 		AF_ERROR("config overflow, cur_size: %d, block_size: %d, max_size: %d",
 				 (int)file->size, (int)count, (int)sizeof(file->buf));
 		return -EINVAL;

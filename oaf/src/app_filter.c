@@ -555,7 +555,7 @@ static unsigned char *read_skb(struct sk_buff *skb, unsigned int from, unsigned 
 	}
 #endif
 
-	msg_buf = kmalloc(len, GFP_KERNEL);
+	msg_buf = kmalloc(len, GFP_ATOMIC);
 	if (!msg_buf) {
 		return NULL;
 	}
@@ -723,7 +723,7 @@ static void dpi_http_proto(flow_info_t *flow)
 	}
 
 	for (i = 0; i < data_len; i++) {
-		if (data[i] == 0x0d && data[i + 1] == 0x0a) {
+		if (i + 1 < data_len && data[i] == 0x0d && data[i + 1] == 0x0a) {
 			if (0 == memcmp(&data[start], "POST ", 5)) {
 				flow->http.match = AF_TRUE;
 				flow->http.method = HTTP_METHOD_POST;
@@ -738,7 +738,7 @@ static void dpi_http_proto(flow_info_t *flow)
 				flow->http.host_pos = data + start + 6;
 				flow->http.host_len = i - start - 6;
 			}
-			if (data[i + 2] == 0x0d && data[i + 3] == 0x0a) {
+			if (i + 3 < data_len && data[i + 2] == 0x0d && data[i + 3] == 0x0a) {
 				flow->http.data_pos = data + i + 4;
 				flow->http.data_len = data_len - i - 4;
 				break;
@@ -888,7 +888,7 @@ static int af_match_by_url(flow_info_t *flow, af_feature_node_t *node)
 			strncpy(reg_url_buf, flow->http.host_pos, flow->http.host_len);
 		}
 	}
-	if (strlen(reg_url_buf) > 0 && strlen(node->host_url) > 0 && regexp_match(node->host_url, reg_url_buf)) {
+	if (strlen(reg_url_buf) > 0 && strlen(node->host_url) > 0 && regexp_match(node->host_url, reg_url_buf) == 1) {
 		AF_DEBUG("match url:%s	 reg = %s, appid=%d\n",
 			 reg_url_buf, node->host_url, node->app_id);
 		return AF_TRUE;
@@ -902,7 +902,7 @@ static int af_match_by_url(flow_info_t *flow, af_feature_node_t *node)
 		} else {
 			strncpy(reg_url_buf, flow->http.url_pos, flow->http.url_len);
 		}
-		if (strlen(reg_url_buf) > 0 && strlen(node->request_url) && regexp_match(node->request_url, reg_url_buf)) {
+		if (strlen(reg_url_buf) > 0 && strlen(node->request_url) && regexp_match(node->request_url, reg_url_buf) == 1) {
 			AF_DEBUG("match request:%s   reg:%s appid=%d\n",
 				 reg_url_buf, node->request_url, node->app_id);
 			return AF_TRUE;
@@ -1851,21 +1851,29 @@ static void oaf_msg_rcv(struct sk_buff *skb)
 	void *udata = NULL;
 	struct af_msg_hdr *af_hdr = NULL;
 
-	if (skb->len >= nlmsg_total_size(0)) {
-		nlh = nlmsg_hdr(skb);
-		umsg = NLMSG_DATA(nlh);
-		af_hdr = (struct af_msg_hdr *)umsg;
-		if (af_hdr->magic != 0xa0b0c0d0) {
-			return;
-		}
-		if (af_hdr->len <= 0 || af_hdr->len >= MAX_OAF_NETLINK_MSG_LEN) {
-			return;
-		}
-		udata = umsg + sizeof(struct af_msg_hdr);
+	if (skb->len < sizeof(struct nlmsghdr) + sizeof(struct af_msg_hdr)) {
+		return;
+	}
+	nlh = nlmsg_hdr(skb);
+	if (nlh->nlmsg_len < sizeof(struct nlmsghdr) + sizeof(struct af_msg_hdr) ||
+	    nlh->nlmsg_len > skb->len) {
+		return;
+	}
 
-		if (udata) {
-			oaf_user_msg_handle(udata, af_hdr->len);
-		}
+	umsg = NLMSG_DATA(nlh);
+	af_hdr = (struct af_msg_hdr *)umsg;
+	if (af_hdr->len <= 0 ||
+	    af_hdr->len > (int)(nlh->nlmsg_len - sizeof(struct nlmsghdr) - sizeof(struct af_msg_hdr))) {
+		return;
+	}
+
+	if (af_hdr->magic != 0xa0b0c0d0) {
+		return;
+	}
+	udata = umsg + sizeof(struct af_msg_hdr);
+
+	if (udata) {
+		oaf_user_msg_handle(udata, af_hdr->len);
 	}
 }
 

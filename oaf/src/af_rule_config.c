@@ -39,9 +39,12 @@ static int af_change_app_status(cJSON *data_obj, int status)
 		AF_ERROR("apps obj is null\n");
 		return -1;
 	}
+
+	af_rule_write_lock();
 	for (i = 0; i < cJSON_GetArraySize(appid_arr); i++) {
 		cJSON *appid_obj = cJSON_GetArrayItem(appid_arr, i);
 		if (!appid_obj) {
+			af_rule_write_unlock();
 			return -1;
 		}
 		id = AF_APP_ID(appid_obj->valueint);
@@ -51,10 +54,9 @@ static int af_change_app_status(cJSON *data_obj, int status)
 			AF_ERROR("invalid appid %d\n", appid_obj->valueint);
 			continue;
 		}
-		af_rule_write_lock();
 		g_app_id_array[type][id] = status;
-		af_rule_write_unlock();
 	}
+	af_rule_write_unlock();
 
 	return 0;
 }
@@ -63,13 +65,13 @@ void af_init_app_status(void)
 {
 	int i, j;
 
+	af_rule_write_lock();
 	for (i = 0; i < AF_MAX_APP_TYPE_NUM; i++) {
 		for (j = 0; j < AF_MAX_APP_NUM; j++) {
-			af_rule_write_lock();
 			g_app_id_array[i][j] = AF_FALSE;
-			af_rule_write_unlock();
 		}
 	}
+	af_rule_write_unlock();
 }
 int af_get_app_status(int appid)
 {

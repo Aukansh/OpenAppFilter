@@ -253,7 +253,7 @@ int regexp_match(char *reg, char *text)
 	int ret;
 	RE *regexp = compile(reg);
 	if(regexp == NULL)
-		return -1;
+		return 0;
 
 	if(regexp->type == BEGIN)
 	{

@@ -46,9 +46,9 @@ af_run_time_status_t g_af_status;
 int g_oaf_config_change = 1;
 af_config_t g_af_config;
 int g_hnat_init = 0;
-int g_feature_update = 0;
 int g_feature_update_time = 0;
 
+volatile sig_atomic_t g_feature_update = 0;
 void oaf_timeout_handler(struct uloop_timeout *t);
 
 void af_init_time_status(void)
