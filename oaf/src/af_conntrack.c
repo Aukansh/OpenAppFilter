@@ -64,6 +64,7 @@ af_conn_t *af_conn_add(u32 src_ip, u32 dst_ip, u16 src_port, u16 dst_port, u8 pr
 	conn->app_id = 0;
 	conn->client_hello = 0;
 	conn->drop = 0;
+	conn->ver = 0;
 	conn->state = AF_CONN_NEW;
 	conn->last_jiffies = jiffies;
 	hlist_add_head(&conn->node, &af_conn_table[hash]);
