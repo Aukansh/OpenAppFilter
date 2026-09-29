@@ -974,9 +974,7 @@ static int af_match_quic(flow_info_t *flow)
 		if (flow->l4_len >= 5) {
 			version = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
 
-			if (version == 0x00000001 ||
-			    version == 0x00000000 ||
-			    version == 0x6b3343cf ||
+			if (version == 0x00000001 || version == 0x00000000 || version == 0x6b3343cf ||
 			    (version >= 0xff000000 && version <= 0xffffffff)) {
 				AF_LMT_DEBUG("match quic, version = %x\n", version);
 				return AF_TRUE;
@@ -985,7 +983,9 @@ static int af_match_quic(flow_info_t *flow)
 		if (flow->dport == 443) {
 			return AF_TRUE;
 		}
-		return AF_FALSE;
+	} else if (flow->dport == 443) {
+		AF_LMT_DEBUG("match quic short header, dport=%d\n", flow->dport);
+		return AF_TRUE;
 	}
 	return AF_FALSE;
 }
@@ -1555,7 +1555,38 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	total_packets = (unsigned long long)atomic64_read(&acct->counter[IP_CT_DIR_ORIGINAL].packets) + (unsigned long long)atomic64_read(&acct->counter[IP_CT_DIR_REPLY].packets);
 
 	if (total_packets > MAX_DPI_PKT_NUM) {
-		return NF_ACCEPT;
+		u32 cached_ver = (ct->mark & FILTER_VER_MASK) >> FILTER_VER_SHIFT;
+		u32 cur_ver    = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
+		int should_drop;
+
+		if (cached_ver == cur_ver) {
+			should_drop = (ct->mark & NF_DROP_BIT) ? 1 : 0;
+		} else {
+			should_drop = 0;
+
+			if (g_oaf_filter_enable && match_app_filter_user(client_mac)) {
+				if (g_app_filter_mode == 1) {
+					if (!(g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac))) {
+						should_drop = 1;
+					}
+				} else if (g_disable_quic && !skb_is_nonlinear(skb) && af_match_quic(&flow)) {
+					should_drop = 1;
+				}
+			}
+
+			ct->mark = (ct->mark & ~FILTER_VER_MASK) | ((cur_ver << FILTER_VER_SHIFT) & FILTER_VER_MASK);
+			if (should_drop) {
+				ct->mark |= NF_DROP_BIT;
+			} else {
+				ct->mark &= ~NF_DROP_BIT;
+			}
+
+			AF_LMT_DEBUG("oversize conn re-eval: mac=%s app_id=%u "
+				     "mode=%d quic=%d drop=%d\n", client_mac, app_id, g_app_filter_mode,
+				     g_disable_quic, should_drop);
+		}
+
+		return should_drop ? NF_DROP : NF_ACCEPT;
 	}
 
 	if (g_oaf_filter_enable && g_disable_quic && af_match_quic(&flow) && match_app_filter_user(client_mac)) {

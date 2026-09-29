@@ -15,6 +15,7 @@ clean_rule()
 	json_init
 	json_add_int "op" 3
 	json_add_object "data"
+	json_close_object
 	json_str=`json_dump`
 	config_apply "$json_str"
 	json_cleanup
@@ -22,17 +23,20 @@ clean_rule()
 
 load_rule()
 {
+	config_load appfilter
 	json_init
 	json_add_int "op" 1
 	json_add_object "data"
 	json_add_array "apps"
 	config_get appid_list rule app_list
 	if ! test -z "$appid_list";then
-		for appid in $appid_list:
+		for appid in $appid_list
 		do
 			json_add_int "" $appid
 		done
 	fi
+	json_close_array
+	json_close_object
 	json_str=`json_dump`
 	config_apply "$json_str"
 	json_cleanup
@@ -46,8 +50,13 @@ load_whitelist_mac()
 	json_add_object "data"
 	json_add_array "mac_list"
 
-	config_foreach add_mac_to_array_callback whitelist
+	config_get user_mode "global" "user_mode"
+	if [ x"0" == x"$user_mode" ];then
+		config_foreach add_mac_to_array_callback whitelist
+	fi
 
+	json_close_array
+	json_close_object
 	json_str=`json_dump`
 	config_apply "$json_str"
 	json_cleanup
@@ -77,6 +86,8 @@ load_mac_list()
 		config_foreach add_mac_to_array_callback af_user
 	fi
 
+	json_close_array
+	json_close_object
 	json_str=`json_dump`
 	config_apply "$json_str"
 	json_cleanup
