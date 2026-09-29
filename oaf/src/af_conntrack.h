@@ -27,6 +27,7 @@ typedef struct {
 	u8 client_hello;
 	u8  drop;
 	u8 ignore;
+	u16 ver;
 	af_conn_state_t state;
 	unsigned long last_jiffies;
 } af_conn_t;
