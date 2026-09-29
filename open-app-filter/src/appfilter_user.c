@@ -546,28 +546,6 @@ void flush_offline_users(void)
 	LOG_WARN("Cleared %d offline users\n", count);
 }
 
-static void get_boot_id(char *buf, int len)
-{
-	FILE *fp;
-	int l;
-
-	if (!buf || len <= 0)
-		return;
-
-	buf[0] = '\0';
-	fp = fopen("/proc/sys/kernel/random/boot_id", "r");
-	if (!fp)
-		return;
-	if (fgets(buf, len, fp) == NULL)
-		buf[0] = '\0';
-	fclose(fp);
-
-	/* strip trailing CR/LF */
-	l = strlen(buf);
-	while (l > 0 && (buf[l - 1] == '\n' || buf[l - 1] == '\r'))
-		buf[--l] = '\0';
-}
-
 void save_user_time_to_file(void)
 {
 	int i;
@@ -606,7 +584,6 @@ void load_user_time_from_file(void)
 	char line_buf[256] = {0};
 	int count = 0;
 	int file_year = 0, file_mon = 0, file_mday = 0;
-	char file_boot_id[64] = {0};
 
 	if (!fp) {
 		LOG_DEBUG("File %s not found or cannot be opened, starting with empty data\n",
@@ -619,7 +596,7 @@ void load_user_time_from_file(void)
 		return;
 	}
 
-	if (sscanf(line_buf, "#%d-%d-%d %63s", &file_year, &file_mon, &file_mday, file_boot_id) < 3) {
+	if (sscanf(line_buf, "#%d-%d-%d", &file_year, &file_mon, &file_mday) != 3) {
 		LOG_INFO("user_list.dat has no date header, skipping load\n");
 		fclose(fp);
 		return;
