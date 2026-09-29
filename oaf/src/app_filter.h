@@ -1,6 +1,8 @@
 #ifndef APP_FILTER_H
 #define APP_FILTER_H
 
+#include <linux/atomic.h>
+
 #define AF_VERSION "5.3.3"
 #define AF_FEATURE_CONFIG_FILE "/tmp/feature.cfg"
 
@@ -55,7 +57,6 @@ enum AF_FEATURE_PARAM_INDEX{
 	AF_IGNORE_PARAM_INDEX,
 };
 
-
 #define OAF_NETLINK_ID 29
 #define MAX_OAF_NL_MSG_LEN 1024
 
@@ -65,11 +66,13 @@ enum E_MSG_TYPE{
 	AF_MSG_CLEAN_FEATURE,
 	AF_MSG_MAX
 };
+
 enum AF_WORK_MODE {
 	AF_MODE_GATEWAY,
 	AF_MODE_BYPASS,
 	AF_MODE_BRIDGE,
 };
+
 #define MAX_AF_MSG_DATA_LEN 800
 typedef struct af_msg{
 	int action;
@@ -84,6 +87,7 @@ enum e_http_method{
 	HTTP_METHOD_GET = 1,
 	HTTP_METHOD_POST,
 };
+
 typedef struct http_proto{
 	int match;
 	int method;
@@ -100,9 +104,6 @@ typedef struct https_proto{
 	char *url_pos;
 	int url_len;
 }https_proto_t;
-
-
-
 
 typedef struct af_pos_info{
 	int pos;
@@ -142,9 +143,6 @@ typedef struct af_feature_node{
 	af_pos_info_t pos_info[MAX_POS_INFO_PER_FEATURE];
 }af_feature_node_t;
 
-
-
-
 typedef struct flow_info{
 	struct nf_conn *ct;
 	u_int32_t src; 
@@ -168,11 +166,11 @@ typedef struct flow_info{
 	af_feature_node_t *feature;
 }flow_info_t;
 
-
-
 int regexp_match(char *reg, char *text);
 int hash_mac(unsigned char *mac);
 char *ipv6_to_str(const struct in6_addr *addr, char *str);
 int af_send_msg_to_user(char *pbuf, uint16_t len);
+
+extern atomic_t g_filter_version;
 
 #endif

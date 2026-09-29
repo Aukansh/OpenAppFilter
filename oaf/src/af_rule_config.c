@@ -18,9 +18,7 @@ DEFINE_RWLOCK(af_rule_lock);
 #define af_rule_read_unlock() read_unlock_bh(&af_rule_lock);
 #define af_rule_write_lock() write_lock_bh(&af_rule_lock);
 #define af_rule_write_unlock() write_unlock_bh(&af_rule_lock);
-
-extern u_int32_t g_update_jiffies;
-
+ 
 char g_app_id_array[AF_MAX_APP_TYPE_NUM][AF_MAX_APP_NUM] = {0};
 
 
