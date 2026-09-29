@@ -58,6 +58,12 @@ DEFINE_RWLOCK(af_feature_lock);
 #define MIN_HOST_LEN				4
 #define APPID_QUIC				10
 
+#define FILTER_VER_MASK		0x1FFF0000u
+#define FILTER_VER_SHIFT	16
+#define FILTER_VER_MODULUS	0x1FFF
+
+atomic_t g_filter_version = ATOMIC_INIT(1);
+
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5, 10, 197)
 extern void nf_send_reset(struct net *net, struct sock *sk, struct sk_buff *oldskb, int hook);
 #elif LINUX_VERSION_CODE > KERNEL_VERSION(4, 4, 1)
@@ -1291,12 +1297,19 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		}
 
 		if (g_oaf_filter_enable) {
-			int should_drop = match_app_filter_rule(flow.app_id, client_mac);
-			if (should_drop != flow.drop) {
-				flow.drop = should_drop;
-				conn->drop = should_drop;
-				AF_LMT_DEBUG("bypass update appid %d action = %s\n",
-					     flow.app_id, flow.drop ? "drop" : "accept");
+			u16 cached_ver = conn->ver;
+			u32 cur_ver    = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
+
+			if (cached_ver != cur_ver) {
+				int should_drop = match_app_filter_rule(flow.app_id, client_mac);
+
+				conn->ver = (u16)cur_ver;
+				if (should_drop != flow.drop) {
+					flow.drop = should_drop;
+					conn->drop = should_drop;
+					AF_LMT_DEBUG("bypass update appid %d action = %s\n",
+						     flow.app_id, flow.drop ? "drop" : "accept");
+				}
 			}
 		}
 	} else {
@@ -1349,6 +1362,8 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		}
 		conn->app_id = flow.app_id;
 		conn->drop = flow.drop;
+		u32 ver = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
+		conn->ver = (u16)ver;
 		if (flow.feature && flow.feature->ignore) {
 			AF_LMT_DEBUG("match ignore feature, feature = %s, appid = %d\n", flow.feature->feature, flow.app_id);
 			conn->ignore = 1;
@@ -1476,27 +1491,36 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		}
 
 		if (app_id > 1000 && app_id < 32000) {
-			int should_drop = 0;
+			u32 cached_ver = (ct->mark & FILTER_VER_MASK) >> FILTER_VER_SHIFT;
+			u32 cur_ver    = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
+			int should_drop;
 
-			if (g_oaf_filter_enable) {
-				if (g_disable_quic && app_id == APPID_QUIC) {
-					should_drop = 1;
-				} else {
-					should_drop = match_app_filter_rule(app_id, client_mac);
+			if (cached_ver == cur_ver) {
+				should_drop = ct_action;
+			} else {
+				should_drop = 0;
+				if (g_oaf_filter_enable) {
+					if (g_disable_quic && app_id == APPID_QUIC) {
+						should_drop = 1;
+					} else {
+						should_drop = match_app_filter_rule(app_id, client_mac);
+					}
 				}
-			}
 
-			if (should_drop != ct_action) {
-				/* Decision changed — refresh the conntrack mark. */
-				if (should_drop) {
-					ct->mark |= NF_DROP_BIT;
-				} else {
-					ct->mark &= ~NF_DROP_BIT;
+				ct->mark = (ct->mark & ~FILTER_VER_MASK) |
+					   ((cur_ver << FILTER_VER_SHIFT) & FILTER_VER_MASK);
+
+				if (should_drop != ct_action) {
+					if (should_drop) {
+						ct->mark |= NF_DROP_BIT;
+					} else {
+						ct->mark &= ~NF_DROP_BIT;
+					}
+					ct_action = should_drop;
+					AF_LMT_DEBUG("update appid %d action to %s, mark = %x-->%x\n",
+						     app_id, ct_action ? "drop" : "accept",
+						     orig_mark, ct->mark);
 				}
-				ct_action = should_drop;
-				AF_LMT_DEBUG("update appid %d action to %s, mark = %x-->%x\n",
-					     app_id, ct_action ? "drop" : "accept",
-					     orig_mark, ct->mark);
 			}
 
 			if (g_oaf_record_enable && !flow.ignore) {
@@ -1537,6 +1561,8 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	if (g_oaf_filter_enable && g_disable_quic && af_match_quic(&flow) && match_app_filter_user(client_mac)) {
 		ct->mark = (ct->mark & 0xFFFF0000) | (APPID_QUIC & 0xFFFF);
 		ct->mark |= NF_DROP_BIT;
+			u32 ver = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
+			ct->mark = (ct->mark & ~FILTER_VER_MASK) | ((ver << FILTER_VER_SHIFT) & FILTER_VER_MASK);
 		AF_LMT_INFO("match quick drop,  %s %pI4(%d)--> %pI4(%d) len = %d [%02x %02x %02x %02x %02x %02x %02x %02x] \n ", IPPROTO_TCP == flow.l4_protocol ? "tcp" : "udp",
 			    &flow.src, flow.sport, &flow.dst, flow.dport, flow.l4_len, flow.l4_data[0], flow.l4_data[1], flow.l4_data[2], flow.l4_data[3], flow.l4_data[4], flow.l4_data[5], flow.l4_data[6], flow.l4_data[7]);
 		return NF_DROP;
@@ -1572,6 +1598,10 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	}
 
 	ct->mark = (ct->mark & 0xFFFF0000) | (flow.app_id & 0xFFFF);
+
+		u32 ver = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
+		ct->mark = (ct->mark & ~FILTER_VER_MASK) | ((ver << FILTER_VER_SHIFT) & FILTER_VER_MASK);
+
 	if (flow.feature && flow.feature->ignore) {
 		ct->mark |= NF_IGNORE_BIT;
 		flow.ignore = 1;
@@ -1719,6 +1749,27 @@ struct timer_list oaf_timer;
 int report_flag = 0;
 #define OAF_TIMER_INTERVAL 1
 
+static u32 g_last_scalar_snapshot = 0xFFFFFFFFu;
+
+static u32 compute_scalar_snapshot(void)
+{
+	return ((u32)(g_oaf_filter_enable	& 1) << 4)
+	     | ((u32)(g_disable_quic		& 1) << 3)
+	     | ((u32)(g_app_filter_mode		& 1) << 2)
+	     | ((u32)(g_daily_limit_mode	& 1) << 1)
+	     | ((u32)(g_user_mode		& 1));
+}
+
+static void bump_filter_version_if_scalar_changed(void)
+{
+	u32 cur = compute_scalar_snapshot();
+
+	if (cur != g_last_scalar_snapshot) {
+		atomic_inc(&g_filter_version);
+		g_last_scalar_snapshot = cur;
+	}
+}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
 static void oaf_timer_func(struct timer_list *t)
 #else
@@ -1730,6 +1781,8 @@ static void oaf_timer_func(unsigned long ptr)
 	if (count % 60 == 0) {
 		check_client_expire();
 	}
+
+	bump_filter_version_if_scalar_changed();
 
 	count++;
 	af_conn_clean_timeout();
