@@ -109,6 +109,7 @@ static int af_config_handle(char *config, unsigned int len)
 	handler = af_find_handler(cmd_obj->valueint);
 	if (handler) {
 		ret = handler(data_obj);
+		atomic_inc(&g_filter_version);
 		cJSON_Delete(config_obj);
 		return ret;
 	} else {
