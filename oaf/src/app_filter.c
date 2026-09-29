@@ -45,8 +45,6 @@ struct list_head af_feature_head = LIST_HEAD_INIT(af_feature_head);
 
 DEFINE_RWLOCK(af_feature_lock);
 
-u_int32_t g_update_jiffies = 0;
-
 #define feature_list_read_lock()		read_lock_bh(&af_feature_lock);
 #define feature_list_read_unlock()		read_unlock_bh(&af_feature_lock);
 #define feature_list_write_lock()		write_lock_bh(&af_feature_lock);
@@ -724,17 +722,18 @@ static void dpi_http_proto(flow_info_t *flow)
 
 	for (i = 0; i < data_len; i++) {
 		if (i + 1 < data_len && data[i] == 0x0d && data[i + 1] == 0x0a) {
-			if (0 == memcmp(&data[start], "POST ", 5)) {
+			int remain = data_len - start;
+			if (remain >= 5 && 0 == memcmp(&data[start], "POST ", 5) && i - start >= 6) {
 				flow->http.match = AF_TRUE;
 				flow->http.method = HTTP_METHOD_POST;
 				flow->http.url_pos = data + start + 5;
 				flow->http.url_len = i - start - 5;
-			} else if (0 == memcmp(&data[start], "GET ", 4)) {
+			} else if (remain >= 4 && 0 == memcmp(&data[start], "GET ", 4) && i - start >= 5) {
 				flow->http.match = AF_TRUE;
 				flow->http.method = HTTP_METHOD_GET;
 				flow->http.url_pos = data + start + 4;
 				flow->http.url_len = i - start - 4;
-			} else if (0 == memcmp(&data[start], "Host:", 5)) {
+			} else if (remain >= 7 && 0 == memcmp(&data[start], "Host:", 5) && i - start >= 6) {
 				flow->http.host_pos = data + start + 6;
 				flow->http.host_len = i - start - 6;
 			}
@@ -1213,32 +1212,6 @@ static int af_check_bcast_ip(flow_info_t *f)
 	return 0;
 }
 
-/*
-	action: 0: accept, 1: drop
-	return: 0: no change, 1: change
-*/
-static u_int32_t check_app_action_changed(int action, u_int32_t app_id, u_int8_t *mac)
-{
-	int changed = 0;
-	u_int32_t max_jiffies = 30 * HZ;
-	u_int32_t interval_jiffies = jiffies - g_update_jiffies;
-
-	if (interval_jiffies < max_jiffies) {
-		AF_LMT_DEBUG("config changed, update app action\n");
-		if (match_app_filter_rule(app_id, mac)) {
-			AF_LMT_DEBUG("match appid = %d, action = %d\n", app_id, action);
-			if (!action) {
-				changed = 1;
-			}
-		} else {
-			if (action) {
-				changed = 1;
-			}
-		}
-	}
-	return changed;
-}
-
 static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_device *dev)
 {
 	flow_info_t flow;
@@ -1317,9 +1290,14 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 			return NF_DROP;
 		}
 
-		if (check_app_action_changed(flow.drop, flow.app_id, client_mac)) {
-			flow.drop = !flow.drop;
-			AF_LMT_DEBUG("update appid %d action, new action = %s\n", flow.app_id, flow.drop ? "drop" : "accept");
+		if (g_oaf_filter_enable) {
+			int should_drop = match_app_filter_rule(flow.app_id, client_mac);
+			if (should_drop != flow.drop) {
+				flow.drop = should_drop;
+				conn->drop = should_drop;
+				AF_LMT_DEBUG("bypass update appid %d action = %s\n",
+					     flow.app_id, flow.drop ? "drop" : "accept");
+			}
 		}
 	} else {
 		if (g_by_pass_accl) {
@@ -1498,26 +1476,39 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		}
 
 		if (app_id > 1000 && app_id < 32000) {
-			AF_LMT_DEBUG("appid = %d, ct_action = %d\n", app_id, ct_action);
-			if (check_app_action_changed(ct_action, app_id, client_mac)) {
-				if (ct_action) { // drop --> accept
-					ct->mark &= ~NF_DROP_BIT;
+			int should_drop = 0;
+
+			if (g_oaf_filter_enable) {
+				if (g_disable_quic && app_id == APPID_QUIC) {
+					should_drop = 1;
 				} else {
-					ct->mark |= NF_DROP_BIT;
+					should_drop = match_app_filter_rule(app_id, client_mac);
 				}
-				ct_action = !ct_action;
-				AF_LMT_DEBUG("update appid %d action to %s, mark = %x-->%x\n",
-					     app_id, ct_action ? "drop" : "accept", orig_mark, ct->mark);
 			}
 
-			if (g_oaf_record_enable) {
-				if (!flow.ignore) {
-					af_update_client_app_info_by_mac(client_mac, app_id, ct_action);
+			if (should_drop != ct_action) {
+				/* Decision changed — refresh the conntrack mark. */
+				if (should_drop) {
+					ct->mark |= NF_DROP_BIT;
 				} else {
-					AF_LMT_DEBUG(" ignore appid = %d, drop = %d, not update status\n", app_id, ct_action);
+					ct->mark &= ~NF_DROP_BIT;
 				}
+				ct_action = should_drop;
+				AF_LMT_DEBUG("update appid %d action to %s, mark = %x-->%x\n",
+					     app_id, ct_action ? "drop" : "accept",
+					     orig_mark, ct->mark);
 			}
-			if (g_oaf_filter_enable && ct_action) {
+
+			if (g_oaf_record_enable && !flow.ignore) {
+				/* Record every packet: af_update_client_app_info
+				 * relies on total_num to decide the visit record's
+				 * expiry window (see flush_expired_visit_info).
+				 * Skipping the update would make active flows look
+				 * idle and get purged prematurely. */
+				af_update_client_app_info_by_mac(client_mac, app_id, ct_action);
+			}
+
+			if (ct_action) {
 				AF_LMT_DEBUG("drop appid = %d, ct_action = %d\n", app_id, ct_action);
 				return NF_DROP;
 			} else {
