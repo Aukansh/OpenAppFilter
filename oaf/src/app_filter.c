@@ -1473,18 +1473,19 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		// 1: drop , 0: accept
 		int ct_action = (NF_DROP_BIT == (ct->mark & NF_DROP_BIT)) ? 1 : 0;
 		flow.ignore = (NF_IGNORE_BIT == (ct->mark & NF_IGNORE_BIT)) ? 1 : 0;
+		int dl_unblocked = (g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac));
 		if (flow.ignore) {
 			AF_LMT_DEBUG("match ignore appid = %d, drop = %d\n", app_id, ct_action);
 		}
 
 		if (g_oaf_filter_enable) {
 			// quic proto
-			if (g_disable_quic && app_id == APPID_QUIC && ct_action) {
+			if (g_disable_quic && app_id == APPID_QUIC && ct_action && !dl_unblocked) {
 				AF_LMT_INFO("mark = %x,drop appid = %d\n", ct->mark, app_id);
 				return NF_DROP;
 			}
 
-			if (g_app_filter_mode && ct_action) {
+			if (g_app_filter_mode && ct_action && !dl_unblocked) {
 				AF_LMT_INFO("ct drop all app\n");
 				return NF_DROP;
 			}
@@ -1564,12 +1565,10 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		} else {
 			should_drop = 0;
 
-			if (g_oaf_filter_enable && match_app_filter_user(client_mac)) {
-				if (g_app_filter_mode == 1) {
-					if (!(g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac))) {
-						should_drop = 1;
-					}
-				} else if (g_disable_quic && !skb_is_nonlinear(skb) && af_match_quic(&flow)) {
+			if (g_oaf_filter_enable) {
+				if (g_disable_quic && !skb_is_nonlinear(skb) && af_match_quic(&flow)) {
+					should_drop = 1;
+				} else if (match_app_filter_rule(app_id, client_mac)) {
 					should_drop = 1;
 				}
 			}
