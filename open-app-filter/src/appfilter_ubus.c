@@ -1909,6 +1909,7 @@ static int handle_del_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
+	g_oaf_config_change = 1;
 	if (g_enable_agent)
 		af_forward_msg_to_agent("del_app_filter_user", msg_obj_str, strlen(msg_obj_str));
 
@@ -1975,6 +1976,7 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 	printf("add af_user ok\n");
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
+	g_oaf_config_change = 1;
 	if (g_enable_agent)
 		af_forward_msg_to_agent("add_app_filter_user", msg_obj_str, strlen(msg_obj_str));
 	uci_free_context(uci_ctx);
@@ -2308,6 +2310,7 @@ static int handle_add_whitelist_user(struct ubus_context *ctx, struct ubus_objec
 	}
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
+	g_oaf_config_change = 1;
 
 	if (g_enable_agent)
 		af_forward_msg_to_agent("add_whitelist_user", msg_obj_str, strlen(msg_obj_str));
@@ -2408,6 +2411,7 @@ static int handle_del_whitelist_user(struct ubus_context *ctx, struct ubus_objec
 
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
+	g_oaf_config_change = 1;
 
 	if (g_enable_agent)
 		af_forward_msg_to_agent("del_whitelist_user", msg_obj_str, strlen(msg_obj_str));
@@ -2465,6 +2469,7 @@ static int handle_cmd(struct ubus_context *ctx, struct ubus_object *obj,
 		reset_all_users_today_active_time();
 		result_msg = "Successfully cleared all users' active time";
 		ret = 0;
+		g_oaf_config_change = 1;
 		printf("handle_cmd: cleared all users' active time\n");
 	} else if (strcmp(action, "clear_user_active_time") == 0) {
 		/* Clear a specific user's today active time */
@@ -2479,6 +2484,7 @@ static int handle_cmd(struct ubus_context *ctx, struct ubus_object *obj,
 			reset_user_today_active_time(mac);
 			result_msg = "Successfully cleared user active time";
 			ret = 0;
+			g_oaf_config_change = 1;
 			printf("handle_cmd: cleared active time for mac=%s\n", mac);
 		}
 	} else if (strcmp(action, "clear_offline_users") == 0) {
