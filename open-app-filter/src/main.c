@@ -40,6 +40,13 @@ THE SOFTWARE.
 
 #define CMD_GET_LAN_IP_FMT	"ifconfig %s | grep 'inet addr' | awk '{print $2}' | awk -F: '{print $2}'"
 #define CMD_GET_LAN_MASK_FMT	"ifconfig %s | grep 'inet addr' | awk '{print $4}' | awk -F: '{print $2}'"
+#define FORCE_DISCONNECT_HOLD_SECS	11
+
+enum {
+	FD_STATE_IDLE = 0,
+	FD_STATE_ENTER_ALL,
+	FD_STATE_WAIT,
+};
 
 int current_log_level = LOG_LEVEL_INFO;
 af_run_time_status_t g_af_status;
@@ -787,7 +794,7 @@ int af_check_time_period_limit(af_time_config_t *t_config)
 		g_af_status.period_blocked = any_blocked;
 		g_af_status.remain_time = 0;
 		g_af_status.used_time = 0;
-		return 1;
+		return any_blocked ? 1 : 0;
 	}
 }
 
@@ -805,13 +812,79 @@ int af_check_time_valid(af_time_config_t *t_config)
 	else
 		return 0;
 }
+static void force_disconnect_tick(int trigger)
+{
+	static int    g_fd_state = FD_STATE_IDLE;
+	static time_t g_fd_start = 0;
+	time_t now;
+
+	if (trigger) {
+		g_fd_state = FD_STATE_ENTER_ALL;
+		g_fd_start = 0;
+		LOG_INFO("force_disconnect: scheduled (restart)\n");
+		return;
+	}
+
+	switch (g_fd_state) {
+	case FD_STATE_IDLE:
+		return;
+
+	case FD_STATE_ENTER_ALL:
+		update_oaf_proc_value("app_filter_mode", "1");
+		g_fd_start = time(NULL);
+		g_fd_state = FD_STATE_WAIT;
+		LOG_INFO("force_disconnect: switched to all-apps mode, "
+			 "holding %d sec\n", FORCE_DISCONNECT_HOLD_SECS);
+		return;
+
+	case FD_STATE_WAIT:
+		now = time(NULL);
+		if (now - g_fd_start >= FORCE_DISCONNECT_HOLD_SECS) {
+			update_oaf_proc_value("app_filter_mode", "0");
+			g_fd_state = FD_STATE_IDLE;
+			LOG_INFO("force_disconnect: restored specified-apps " "mode\n");
+		}
+		return;
+	}
+}
 
 void update_oaf_status(void)
 {
 	int ret = 0;
+	static int last_ret = -1;
+	static int last_period_blocked = 0;
+	static int last_blocked_count = 0;
+	int cur_blocked_count = 0;
+	int need_force = 0;
 
-	if (g_af_config.global.enable == 1)
+	if (g_af_config.global.enable == 1) {
 		ret = af_check_time_valid(&g_af_config.time);
+	}
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *n = dev_hash_table[i];
+
+		while (n) {
+			if (n->is_selected && n->blocked)
+				cur_blocked_count++;
+			n = n->next;
+		}
+	}
+
+	if (ret == 1 && last_ret == 0)
+		need_force = 1;
+
+	if (cur_blocked_count > last_blocked_count)
+		need_force = 1;
+
+	if (need_force && g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
+		force_disconnect_tick(1);
+		LOG_INFO("force_disconnect triggered: ret=%d->%d, blocked=%d->%d\n", last_ret, ret, last_blocked_count, cur_blocked_count);
+	}
+
+	last_ret = ret;
+	last_period_blocked = g_af_status.period_blocked;
+	last_blocked_count = cur_blocked_count;
 	update_oaf_proc_value("enable", ret == 1 ? "1" : "0");
 }
 
@@ -931,10 +1004,12 @@ void check_date_change(void)
 void oaf_timeout_handler(struct uloop_timeout *t)
 {
 	static int count = 0;
+	force_disconnect_tick(0);
 
 	if (count % 10 == 0) {
 		update_dev_list();
 		update_oaf_status();
+		check_all_users_period_time();
 	}
 	if (count % 60 == 0) {
 		LOG_DEBUG("begin check dev count = %d\n", count);
@@ -943,10 +1018,10 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_dynamic_used_time(&g_af_config.time);
 		update_oaf_status();
 		update_lan_ip();
+		update_dev_selected_flag();
 		if (check_dev_expire())
 			flush_dev_expire_node();
 		check_date_change();
-		check_all_users_period_time();
 		dump_dev_list();
 	}
 	if (count % 600 == 0 && count > 0 && g_af_config.time.time_mode == 2)
@@ -963,6 +1038,10 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_app_filter_mode_status();
 		update_oaf_daily_limit_mode_status();
 		g_oaf_config_change = 0;
+
+		if (g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
+			force_disconnect_tick(1);
+		}
 	}
 
 	if (appfilter_nl_fd.fd < 0 && access("/proc/sys/oaf", F_OK) == 0) {
