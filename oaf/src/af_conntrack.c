@@ -132,10 +132,12 @@ void af_conn_clean_timeout(void)
 		last_bucket = i;
 		count++;
 		if (count > MAX_AF_CONN_CHECK_COUNT) {
+			last_bucket = i + 1;
 			break;
 		}
+		last_bucket = i + 1;
 	}
-	if (last_bucket == AF_CONN_HASH_SIZE - 1) {
+	if (last_bucket >= AF_CONN_HASH_SIZE) {
 		last_bucket = 0;
 	}
 	spin_unlock(&af_conn_lock);
