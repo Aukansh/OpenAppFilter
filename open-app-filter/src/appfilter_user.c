@@ -926,6 +926,8 @@ void reset_all_users_today_active_time(void)
 				  node->today_pm_active_time);
 			node->today_am_active_time = 0;
 			node->today_pm_active_time = 0;
+			node->last_up_bytes   = node->today_up_bytes;
+			node->last_down_bytes = node->today_down_bytes;
 			node = node->next;
 		}
 	}
@@ -1014,12 +1016,12 @@ void check_all_users_period_time(void)
 		dev_node_t *node = dev_hash_table[i];
 
 		while (node) {
-			int active = (node->today_up_bytes   > node->last_up_bytes) ||
-			             (node->today_down_bytes > node->last_down_bytes);
+			int byte_active = (node->today_up_bytes   > node->last_up_bytes) || (node->today_down_bytes > node->last_down_bytes);
+
 			node->last_up_bytes   = node->today_up_bytes;
 			node->last_down_bytes = node->today_down_bytes;
 
-			if (node->online && node->is_selected && active) {
+			if (node->online && node->is_selected && (byte_active || node->active)) {
 				if (current_hour < 12)
 					node->today_am_active_time += minutes_elapsed;
 				else

@@ -102,15 +102,15 @@ static int __add_app_feature(char *feature, int appid, char *name, int proto, in
 		return -1;
 	} else {
 		node->app_id = appid;
-		strcpy(node->app_name, name);
+		snprintf(node->app_name, sizeof(node->app_name), "%s", name);
 		node->proto = proto;
 		node->dport_info = dport_info;
 		node->sport = src_port;
-		strcpy(node->host_url, host_url);
-		strcpy(node->request_url, request_url);
-		strcpy(node->search_str, search_str);
+		snprintf(node->host_url,    sizeof(node->host_url),    "%s", host_url);
+		snprintf(node->request_url, sizeof(node->request_url), "%s", request_url);
+		snprintf(node->search_str,  sizeof(node->search_str),  "%s", search_str);
 		node->ignore = ignore;
-		strcpy(node->feature, feature);
+		snprintf(node->feature, sizeof(node->feature), "%s", feature);
 		if (ignore) {
 			AF_DEBUG("add feature %s, ignore = %d\n", feature, ignore);
 		}
@@ -290,6 +290,15 @@ static int add_app_feature(int appid, char *name, char *feature)
 	char search_str[128] = {0};
 	char *p = feature;
 	char *begin = feature;
+	size_t seg_len;
+
+#define SAFE_COPY(dst, src, n) do {                             \
+	seg_len = (n);                                          \
+	if (seg_len >= sizeof(dst))                             \
+		seg_len = sizeof(dst) - 1;                      \
+	memcpy((dst), (src), seg_len);                          \
+	(dst)[seg_len] = '\0';                                  \
+} while (0)
 
 	if (!name || !feature) {
 		AF_ERROR("error, name or feature is null\n");
@@ -308,28 +317,28 @@ static int add_app_feature(int appid, char *name, char *feature)
 
 		switch (param_num) {
 		case AF_PROTO_PARAM_INDEX:
-			strncpy(proto_str, begin, p - begin);
+			SAFE_COPY(proto_str, begin, p - begin);
 			break;
 		case AF_SRC_PORT_PARAM_INDEX:
-			strncpy(src_port_str, begin, p - begin);
+			SAFE_COPY(src_port_str, begin, p - begin);
 			break;
 		case AF_DST_PORT_PARAM_INDEX:
-			strncpy(dst_port_str, begin, p - begin);
+			SAFE_COPY(dst_port_str, begin, p - begin);
 			break;
 		case AF_HOST_URL_PARAM_INDEX:
-			strncpy(host_url, begin, p - begin);
+			SAFE_COPY(host_url, begin, p - begin);
 			break;
 		case AF_REQUEST_URL_PARAM_INDEX:
-			strncpy(request_url, begin, p - begin);
+			SAFE_COPY(request_url, begin, p - begin);
 			break;
 		case AF_DICT_PARAM_INDEX:
-			strncpy(dict, begin, p - begin);
+			SAFE_COPY(dict, begin, p - begin);
 			break;
 		case AF_STR_PARAM_INDEX:
-			strncpy(search_str, begin, p - begin);
+			SAFE_COPY(search_str, begin, p - begin);
 			break;
 		case AF_IGNORE_PARAM_INDEX:
-			strncpy(tmp_buf, begin, p - begin);
+			SAFE_COPY(tmp_buf, begin, p - begin);
 			ignore = k_atoi(tmp_buf);
 			break;
 		}
@@ -339,11 +348,11 @@ static int add_app_feature(int appid, char *name, char *feature)
 
 	// old version
 	if (param_num == AF_DICT_PARAM_INDEX) {
-		strncpy(dict, begin, p - begin);
+		SAFE_COPY(dict, begin, p - begin);
 	}
 	// new version
 	if (param_num == AF_IGNORE_PARAM_INDEX) {
-		strncpy(tmp_buf, begin, p - begin);
+		SAFE_COPY(tmp_buf, begin, p - begin);
 		ignore = k_atoi(tmp_buf);
 	}
 
@@ -451,7 +460,7 @@ static void load_feature_buf_from_file(char **config_buf)
 		filp_close(fp, NULL);
 		return;
 	}
-	*config_buf = (char *)kzalloc(sizeof(char) * size, GFP_ATOMIC);
+	*config_buf = (char *)kzalloc(sizeof(char) * (size + 1), GFP_ATOMIC);
 	if (NULL == *config_buf) {
 		AF_ERROR("alloc buf fail\n");
 		filp_close(fp, NULL);
@@ -1408,7 +1417,11 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	u_int8_t malloc_data = 0;
 	u_int8_t client_mac[ETH_ALEN] = {0};
 
-	if (!strstr(dev->name, g_lan_ifname)) {
+	if (g_lan_ifname[0] == '\0') {
+		return NF_ACCEPT;
+	}
+
+	if (strcmp(dev->name, g_lan_ifname) != 0) {
 		return NF_ACCEPT;
 	}
 
@@ -1429,9 +1442,11 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 				need_drop = 0;
 			}
 			if (need_drop) {
-				AF_LMT_INFO("all-apps mode: drop packet, mac="
-					    MAC_FMT ", proto=%d\n",
-					    MAC_ARRAY(pre_mac),
+				if (skb->protocol == htons(ETH_P_IP) && ip_hdr(skb)->protocol == IPPROTO_TCP && g_tcp_rst) {
+					nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
+				}
+
+				AF_LMT_INFO("all-apps mode: drop packet, mac=" MAC_FMT ", proto=%d\n", MAC_ARRAY(pre_mac),
 					    skb->protocol == htons(ETH_P_IP) ? ip_hdr(skb)->protocol : -1);
 				return NF_DROP;
 			}
@@ -1491,7 +1506,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 			}
 		}
 
-		if (app_id > 1000 && app_id < 32000) {
+		if (app_id > 1000 && app_id <= 32512) {
 			u32 cached_ver = (ct->mark & FILTER_VER_MASK) >> FILTER_VER_SHIFT;
 			u32 cur_ver    = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
 			int should_drop;
@@ -1518,9 +1533,16 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 						ct->mark &= ~NF_DROP_BIT;
 					}
 					ct_action = should_drop;
-					AF_LMT_DEBUG("update appid %d action to %s, mark = %x-->%x\n",
-						     app_id, ct_action ? "drop" : "accept",
-						     orig_mark, ct->mark);
+					AF_LMT_DEBUG("update appid %d action to %s, mark = %x-->%x\n", app_id, ct_action ? "drop" : "accept", orig_mark, ct->mark);
+
+					if (ct_action && skb->protocol == htons(ETH_P_IP) && ip_hdr(skb)->protocol == IPPROTO_TCP && g_tcp_rst) {
+					#if LINUX_VERSION_CODE > KERNEL_VERSION(5, 10, 197)
+						nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
+					#elif LINUX_VERSION_CODE > KERNEL_VERSION(4, 4, 1)
+					#else
+						nf_send_reset(skb, NF_INET_PRE_ROUTING);
+					#endif
+					}
 				}
 			}
 
@@ -1564,6 +1586,46 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 			should_drop = (ct->mark & NF_DROP_BIT) ? 1 : 0;
 		} else {
 			should_drop = 0;
+
+			if (app_id == 0 && flow.l4_len > 0) {
+				unsigned char *re_dpi_buf = flow.l4_data;
+				u_int8_t re_dpi_malloc = 0;
+
+				if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
+					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
+					if (re_dpi_buf) {
+						re_dpi_malloc = 1;
+					}
+				}
+
+				if (re_dpi_buf) {
+					unsigned char *saved_l4_data = flow.l4_data;
+					flow.l4_data = re_dpi_buf;
+					dpi_main(skb, &flow);
+
+					if (match_feature(&flow) && flow.app_id > 0) {
+						ct->mark = (ct->mark & 0xFFFF0000) | (flow.app_id & 0xFFFF);
+						if (flow.feature && flow.feature->ignore) {
+							ct->mark |= NF_IGNORE_BIT;
+							flow.ignore = 1;
+						}
+						app_id = flow.app_id;
+						AF_LMT_INFO("re-DPI hit: mac=" MAC_FMT " appid=%u name=%s\n", MAC_ARRAY(client_mac), app_id, flow.app_name);
+					}
+					flow.l4_data = saved_l4_data;
+					memset(&flow.http,  0, sizeof(flow.http));
+					memset(&flow.https, 0, sizeof(flow.https));
+					if (flow.client_hello) {
+						ct->mark |= NF_CLIENT_HELLO_BIT;
+					} else {
+						ct->mark &= ~NF_CLIENT_HELLO_BIT;
+					}
+				}
+
+				if (re_dpi_malloc && re_dpi_buf) {
+					kfree(re_dpi_buf);
+				}
+			}
 
 			if (g_oaf_filter_enable) {
 				if (g_disable_quic && !skb_is_nonlinear(skb) && af_match_quic(&flow)) {

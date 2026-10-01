@@ -317,11 +317,15 @@ static int __af_visit_info_report(af_client_info_t *node)
 
 static inline int get_packet_dir(struct net_device *in)
 {
-	if (strstr(in->name, g_lan_ifname)) {
-		return PKT_DIR_UP;
-	} else {
+	if (g_lan_ifname[0] == '\0') {
 		return PKT_DIR_DOWN;
 	}
+
+	if (strcmp(in->name, g_lan_ifname) == 0) {
+		return PKT_DIR_UP;
+	}
+
+	return PKT_DIR_DOWN;
 }
 
 
@@ -573,7 +577,13 @@ static void client_timer_handler(unsigned long data)
 		AF_ERROR("client timer handler: invalid client\n");
 		return;
 	}
-	
+
+	AF_CLIENT_LOCK_W();
+	if (!find_af_client(client->mac)) {
+		AF_CLIENT_UNLOCK_W();
+		return;
+	}
+
 	if (client->timer_count >= 30) {
 		__af_visit_info_report(client);
 		client->timer_count = 0;
@@ -581,6 +591,7 @@ static void client_timer_handler(unsigned long data)
 
 	af_update_client_status(client);
 	client->timer_count++;
+	AF_CLIENT_UNLOCK_W();
 	mod_timer(&client->client_timer, jiffies + HZ * 2); 
 }
 
