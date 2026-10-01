@@ -6,7 +6,7 @@
 #define AF_VERSION "5.3.3"
 #define AF_FEATURE_CONFIG_FILE "/tmp/feature.cfg"
 
-#define MAX_DPI_PKT_NUM 64
+#define MAX_DPI_PKT_NUM 256
 #define MIN_HTTP_DATA_LEN 16
 #define MAX_APP_NAME_LEN 64
 #define MAX_FEATURE_NUM_PER_APP 16 
