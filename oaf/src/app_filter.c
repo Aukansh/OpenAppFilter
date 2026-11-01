@@ -1035,7 +1035,7 @@ static int match_app_filter_user(u_int8_t *mac)
 	return AF_TRUE;
 }
 
-static int match_app_filter_rule(int appid, u_int8_t *mac)
+static int match_app_filter_rule(int appid, u_int8_t *mac, flow_info_t *flow)
 {
 	if (!match_app_filter_user(mac)) {
 		return AF_FALSE;
@@ -1049,6 +1049,16 @@ static int match_app_filter_rule(int appid, u_int8_t *mac)
 
 	// All apps mode: skip appid check, match user only
 	if (g_app_filter_mode == 1) {
+		return AF_TRUE;
+	}
+
+	if (g_app_filter_mode == 2) {
+		if (flow && (flow->dport == 53 || flow->sport == 53)) {
+			return AF_FALSE;
+		}
+		if (af_get_app_status(appid)) {
+			return AF_FALSE;
+		}
 		return AF_TRUE;
 	}
 
@@ -1310,7 +1320,7 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 			u32 cur_ver    = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
 
 			if (cached_ver != cur_ver) {
-				int should_drop = match_app_filter_rule(flow.app_id, client_mac);
+				int should_drop = match_app_filter_rule(flow.app_id, client_mac, &flow);
 
 				conn->ver = (u16)cur_ver;
 				if (should_drop != flow.drop) {
@@ -1354,7 +1364,7 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		}
 
 		if (g_oaf_filter_enable) {
-			if (match_app_filter_rule(flow.app_id, client_mac)) {
+			if (match_app_filter_rule(flow.app_id, client_mac, &flow)) {
 				flow.drop = 1;
 				AF_INFO("##Drop appid %d\n", flow.app_id);
 				if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst) {
@@ -1519,7 +1529,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 					if (g_disable_quic && app_id == APPID_QUIC) {
 						should_drop = 1;
 					} else {
-						should_drop = match_app_filter_rule(app_id, client_mac);
+						should_drop = match_app_filter_rule(app_id, client_mac, NULL);
 					}
 				}
 
@@ -1630,7 +1640,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 			if (g_oaf_filter_enable) {
 				if (g_disable_quic && !skb_is_nonlinear(skb) && af_match_quic(&flow)) {
 					should_drop = 1;
-				} else if (match_app_filter_rule(app_id, client_mac)) {
+				} else if (match_app_filter_rule(app_id, client_mac, &flow)) {
 					should_drop = 1;
 				}
 			}
@@ -1701,7 +1711,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	}
 
 	if (g_oaf_filter_enable) {
-		if (match_app_filter_rule(flow.app_id, client_mac)) {
+		if (match_app_filter_rule(flow.app_id, client_mac, &flow)) {
 			ct->mark |= NF_DROP_BIT;
 			flow.drop = 1;
 			AF_LMT_INFO("##Drop app %s flow, appid is %d\n", flow.app_name, flow.app_id);
@@ -1845,9 +1855,9 @@ static u32 g_last_scalar_snapshot = 0xFFFFFFFFu;
 
 static u32 compute_scalar_snapshot(void)
 {
-	return ((u32)(g_oaf_filter_enable	& 1) << 4)
-	     | ((u32)(g_disable_quic		& 1) << 3)
-	     | ((u32)(g_app_filter_mode		& 1) << 2)
+	return ((u32)(g_oaf_filter_enable	& 1) << 5)
+	     | ((u32)(g_disable_quic		& 1) << 4)
+	     | ((u32)(g_app_filter_mode		& 3) << 2)
 	     | ((u32)(g_daily_limit_mode	& 1) << 1)
 	     | ((u32)(g_user_mode		& 1));
 }
