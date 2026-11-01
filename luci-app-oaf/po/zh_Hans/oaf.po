@@ -293,6 +293,9 @@ msgstr "时间格式不合法，请输入有效的时间格式 (HH:MM)"
 msgid "End time must be greater than start time"
 msgstr "结束时间必须大于开始时间"
 
+msgid "Invalid daily time limit data, please refresh the page and try again."
+msgstr "无效的每日时间限制数据，请刷新页面重试。"
+
 msgid "Time Rules"
 msgstr "时间规则"
 
@@ -388,6 +391,12 @@ msgstr "详情"
 
 msgid "Please enter a valid remark"
 msgstr "请输入合法的备注"
+
+msgid "Table View"
+msgstr "表格视图"
+
+msgid "Card View"
+msgstr "卡片视图"
 
 msgid "Device Info"
 msgstr "设备信息"
@@ -552,6 +561,18 @@ msgstr "QUIC协议"
 msgid "Filter the QUIC protocol"
 msgstr "过滤QUIC协议"
 
+msgid "Rule Action"
+msgstr "规则选择"
+
+msgid "Blacklist (Disabled)"
+msgstr "黑名单（禁用）"
+
+msgid "Whitelist (Allowed)"
+msgstr "白名单（允许）"
+
+msgid "In this mode, only the selected Apps are allowed to access the network, all other Apps will be blocked."
+msgstr "只有选定的应用程序可以访问网络，所有其他应用程序将被阻止。"
+
 msgid "Some Apps use encrypted QUIC protocol, which cannot be distinguished for filtering, Such as Youtube, Instagram, etc. For better filtering results, you can try disabling the QUIC protocol."
 msgstr "部分应用采用了加密的QUIC协议，无法区分实现完全过滤，比如淘宝、京东等，如需要达到更好的效果，可尝试禁用QUIC协议。"
 
@@ -639,8 +660,6 @@ msgstr "离线用户清除成功"
 msgid "Failed to clear offline users"
 msgstr "清除离线用户失败"
 
-
-
 msgid "Fixed Time Mode"
 msgstr "固定时间模式"
 
@@ -649,6 +668,12 @@ msgstr "动态时间模式"
 
 msgid "Period"
 msgstr "时间段"
+
+msgid "Deny Time"
+msgstr "学习时间"
+
+msgid "Allow Time"
+msgstr "休息时间"
 
 msgid "Time Range"
 msgstr "时间范围"
@@ -673,12 +698,6 @@ msgstr "动态时间模式：已排除白名单用户"
 
 msgid "No users found"
 msgstr "未找到用户"
-
-msgid "Time Configuration"
-msgstr "时间配置"
-
-msgid "User Configuration"
-msgstr "用户配置"
 
 msgid "Loading..."
 msgstr "加载中..."
@@ -722,7 +741,7 @@ msgstr "上午限制时长（分钟）"
 msgid "Afternoon Time Limit (minutes)"
 msgstr "下午限制时长（分钟）"
 
-msgid "Note: Set to 0 to disable time limit for that period."
+msgid "Hint: Set to 0 means no time limit for this period."
 msgstr "提示：设置为0表示该时段不限制上网时长。"
 
 msgid "Value cannot be negative"
@@ -754,6 +773,9 @@ msgstr "否"
 
 msgid "Today Active Time"
 msgstr "今日活跃时长"
+
+msgid "Today Flow"
+msgstr "今日流量"
 
 msgid "Morning"
 msgstr "上午"
@@ -803,8 +825,35 @@ msgstr "未设置"
 msgid "Used up"
 msgstr "已用完"
 
+msgid "Blocked"
+msgstr "已限制"
+
 msgid "Clear"
 msgstr "清除"
+
+msgid "Clear this device's time"
+msgstr "清除此设备时长"
+
+msgid "Are you sure you want to clear this device's active time?"
+msgstr "确定要清除此设备的今日上网时长吗？"
+
+msgid "Failed to clear"
+msgstr "清除失败"
+
+msgid "Independent mode"
+msgstr "独立模式"
+
+msgid "Shared mode"
+msgstr "共享模式"
+
+msgid "Time Limit Mode"
+msgstr "时长限制模式"
+
+msgid "Device shared time"
+msgstr "设备共享时长"
+
+msgid "Device independent time"
+msgstr "设备独立时长"
 
 msgid "Current Time"
 msgstr "当前时间"
