@@ -840,7 +840,13 @@ static void force_disconnect_tick(int trigger)
 	case FD_STATE_WAIT:
 		now = time(NULL);
 		if (now - g_fd_start >= FORCE_DISCONNECT_HOLD_SECS) {
-			update_oaf_proc_value("app_filter_mode", "0");
+			char mode_str[8] = {0};
+			if (g_af_config.global.app_filter_mode == 2) {
+				strcpy(mode_str, "2");
+			} else {
+				strcpy(mode_str, "0");
+			}
+			update_oaf_proc_value("app_filter_mode", mode_str);
 			g_fd_state = FD_STATE_IDLE;
 			LOG_INFO("force_disconnect: restored specified-apps " "mode\n");
 		}
@@ -877,7 +883,7 @@ void update_oaf_status(void)
 	if (cur_blocked_count > last_blocked_count)
 		need_force = 1;
 
-	if (need_force && g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
+	if (need_force && g_af_config.time.time_mode != 1 && (g_af_config.global.app_filter_mode == 0 || g_af_config.global.app_filter_mode == 2)) {
 		force_disconnect_tick(1);
 		LOG_INFO("force_disconnect triggered: ret=%d->%d, blocked=%d->%d\n", last_ret, ret, last_blocked_count, cur_blocked_count);
 	}
@@ -902,8 +908,9 @@ void update_oaf_disable_quic_status(void)
 
 void update_oaf_app_filter_mode_status(void)
 {
-	update_oaf_proc_value("app_filter_mode",
-			      g_af_config.global.app_filter_mode == 1 ? "1" : "0");
+	char mode_str[8] = {0};
+	snprintf(mode_str, sizeof(mode_str), "%d", g_af_config.global.app_filter_mode);
+	update_oaf_proc_value("app_filter_mode", mode_str);
 }
 
 void update_oaf_daily_limit_mode_status(void)
@@ -1039,7 +1046,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_daily_limit_mode_status();
 		g_oaf_config_change = 0;
 
-		if (g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
+		if (g_af_config.time.time_mode != 1 && (g_af_config.global.app_filter_mode == 0 || g_af_config.global.app_filter_mode == 2)) {
 			force_disconnect_tick(1);
 		}
 	}
