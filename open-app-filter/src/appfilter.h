@@ -2,6 +2,7 @@
 #define __APPFILTER_H__
 
 #define MIN_INET_ADDR_LEN			7
+#define AF_CMD_SET_MAC_LIST			4
 #define AF_CMD_SET_BLOCKED_MAC_LIST	6
 
 #include <stdio.h>
