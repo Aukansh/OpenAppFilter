@@ -305,8 +305,11 @@ void update_dev_selected_flag(void)
 			dev_node_t *node = dev_hash_table[i];
 
 			while (node) {
-				if (!node->is_whitelist)
+				if (!node->is_whitelist) {
 					node->is_selected = 1;
+					strcpy(node->start_time, "00:00");
+					strcpy(node->end_time, "23:59");
+				}
 				node = node->next;
 			}
 		}
