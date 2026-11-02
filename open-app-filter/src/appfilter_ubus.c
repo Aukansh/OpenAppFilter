@@ -1566,6 +1566,8 @@ void all_users_callback(void *arg, dev_node_t *dev)
 		json_object_object_add(user_obj, "nickname", json_object_new_string(dev->nickname));
 		json_object_object_add(user_obj, "is_whitelist", json_object_new_int(dev->is_whitelist));
 		json_object_object_add(user_obj, "is_selected", json_object_new_int(dev->is_selected));
+		json_object_object_add(user_obj, "start_time", json_object_new_string(dev->start_time));
+		json_object_object_add(user_obj, "end_time", json_object_new_string(dev->end_time));
 	}
 
 	if (flag > 2) {
