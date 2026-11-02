@@ -448,6 +448,99 @@ void update_oaf_proc_u32_value(char *key, u_int32_t value)
 	update_oaf_proc_value(key, buf);
 }
 
+static void sync_manual_macs_to_kernel(void)
+{
+	static char last_json[4096] = {0};
+	char buf[4096] = {0};
+	int pos = 0;
+	int first = 1;
+	int ret;
+
+	if (g_af_config.global.user_mode == 0) {
+		return;
+	}
+
+	ret = snprintf(buf + pos, sizeof(buf) - pos,
+		       "{\"op\":%d,\"data\":{\"mac_list\":[",
+		       AF_CMD_SET_MAC_LIST);
+	if (ret < 0 || ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			if (node->is_selected && node->is_time_active == 1) {
+				ret = snprintf(buf + pos, sizeof(buf) - pos,
+					       first ? "\"%s\"" : ",\"%s\"",
+					       node->mac);
+				if (ret < 0 || pos + ret >= (int)sizeof(buf)) {
+					return;
+				}
+				pos += ret;
+				first = 0;
+			}
+			node = node->next;
+		}
+	}
+	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	if (ret < 0 || pos + ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
+
+	if (strcmp(buf, last_json) == 0)
+		return;
+
+	FILE *fp = fopen("/dev/appfilter", "w");
+	if (fp) {
+		fwrite(buf, 1, strlen(buf), fp);
+		fclose(fp);
+		LOG_INFO("sync manual macs to kernel: %s\n", buf);
+	}
+	strncpy(last_json, buf, sizeof(last_json) - 1);
+	last_json[sizeof(last_json) - 1] = '\0';
+}
+
+static void check_user_time_rules(void)
+{
+	int changed = 0;
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	int current_m = tm_info->tm_hour * 60 + tm_info->tm_min;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			if (node->is_selected) {
+				int active = 0;
+				if (g_af_config.global.user_mode == 0) {
+					active = 1;
+				} else {
+					int sm = atoi(node->start_time) * 60 + atoi(node->start_time + 3);
+					int em = atoi(node->end_time) * 60 + atoi(node->end_time + 3);
+					if (strlen(node->start_time) == 0) sm = 0;
+					if (strlen(node->end_time) == 0) em = 23 * 60 + 59;
+					if (sm <= em) {
+						active = (current_m >= sm && current_m <= em);
+					} else {
+						active = (current_m >= sm || current_m <= em);
+					}
+				}
+				
+				if (node->is_time_active != active) {
+					node->is_time_active = active;
+					changed = 1;
+				}
+			}
+			node = node->next;
+		}
+	}
+	
+	if (changed) {
+		sync_manual_macs_to_kernel();
+	}
+}
+
 void update_lan_ip(void)
 {
 	char ip_str[32] = {0};
@@ -645,113 +738,6 @@ void sync_blocked_macs_to_kernel(void)
 	last_json[sizeof(last_json) - 1] = '\0';
 }
 
-static void sync_manual_macs_to_kernel(void)
-{
-	static char last_json[4096] = {0};
-	char buf[4096] = {0};
-	int pos = 0;
-	int first = 1;
-	int ret;
-
-	if (g_af_config.global.user_mode == 0) {
-		return;
-	}
-
-	ret = snprintf(buf + pos, sizeof(buf) - pos,
-		       "{\"op\":%d,\"data\":{\"mac_list\":[",
-		       AF_CMD_SET_MAC_LIST);
-	if (ret < 0 || ret >= (int)sizeof(buf))
-		return;
-	pos += ret;
-
-	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-		dev_node_t *node = dev_hash_table[i];
-		while (node) {
-			if (node->is_selected && node->is_time_active) {
-				ret = snprintf(buf + pos, sizeof(buf) - pos,
-					       first ? "\"%s\"" : ",\"%s\"",
-					       node->mac);
-				if (ret < 0 ||
-				    pos + ret >= (int)sizeof(buf)) {
-					LOG_WARN("manual mac list truncated "
-						 "at pos=%d, skip sync\n", pos);
-					return;
-				}
-				pos += ret;
-				first = 0;
-			}
-			node = node->next;
-		}
-	}
-	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
-	if (ret < 0 || pos + ret >= (int)sizeof(buf)) {
-		LOG_WARN("manual mac list tail overflow, skip sync\n");
-		return;
-	}
-	pos += ret;
-
-	if (strcmp(buf, last_json) == 0)
-		return;
-
-	FILE *fp = fopen("/dev/appfilter", "w");
-	if (fp) {
-		fwrite(buf, 1, strlen(buf), fp);
-		fclose(fp);
-		LOG_INFO("sync manual macs to kernel: %s\n", buf);
-	} else {
-		LOG_ERROR("open /dev/appfilter failed\n");
-	}
-	strncpy(last_json, buf, sizeof(last_json) - 1);
-	last_json[sizeof(last_json) - 1] = '\0';
-}
-
-static void check_user_time_rules(void)
-{
-	int changed = 0;
-	time_t now = time(NULL);
-	struct tm *tm_info = localtime(&now);
-	int current_m = tm_info->tm_hour * 60 + tm_info->tm_min;
-
-	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-		dev_node_t *node = dev_hash_table[i];
-		while (node) {
-			if (node->is_selected) {
-				if (g_af_config.time.time_mode == 2) {
-					int wday = tm_info->tm_wday;
-					if (!g_af_config.time.daily_limit[wday].enable) {
-						if (node->is_time_active != 0) {
-							node->is_time_active = 0;
-							changed = 1;
-						}
-						node = node->next;
-						continue;
-					}
-				}
-				int sm = atoi(node->start_time) * 60 + atoi(node->start_time + 3);
-				int em = atoi(node->end_time) * 60 + atoi(node->end_time + 3);
-				int active = 0;
-				
-				if (sm <= em) {
-					active = (current_m >= sm && current_m <= em);
-				} else {
-					active = (current_m >= sm || current_m <= em);
-				}
-				
-				if (node->is_time_active != active) {
-					node->is_time_active = active;
-					changed = 1;
-					LOG_INFO("user %s time active changed to %d\n", node->mac, active);
-				}
-			}
-			node = node->next;
-		}
-	}
-	
-	if (changed) {
-		sync_manual_macs_to_kernel();
-	}
-}
-
 int af_check_time_period_limit(af_time_config_t *t_config)
 {
 	int total_active_time = 0;
@@ -892,6 +878,11 @@ int af_check_time_period_limit(af_time_config_t *t_config)
 			dev_node_t *node = dev_hash_table[i];
 			while (node) {
 				if (node->is_selected) {
+					if (node->is_time_active != 1) {
+						node->blocked = 0;
+						node = node->next;
+						continue;
+					}
 					int device_used = is_morning ? node->today_am_active_time
 								     : node->today_pm_active_time;
 					if (device_used >= max_allowed_time) {
@@ -1049,12 +1040,6 @@ void update_oaf_daily_limit_mode_status(void)
 			      g_af_config.global.daily_limit_mode == 1 ? "1" : "0");
 }
 
-static void update_oaf_user_mode_status(void)
-{
-	update_oaf_proc_value("user_mode",
-			      g_af_config.global.user_mode == 1 ? "1" : "0");
-}
-
 int af_nl_clean_feature(void)
 {
 	af_msg_t msg;
@@ -1181,7 +1166,6 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_disable_quic_status();
 		update_oaf_app_filter_mode_status();
 		update_oaf_daily_limit_mode_status();
-		update_oaf_user_mode_status();
 		g_oaf_config_change = 0;
 
 		for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
