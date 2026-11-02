@@ -448,99 +448,6 @@ void update_oaf_proc_u32_value(char *key, u_int32_t value)
 	update_oaf_proc_value(key, buf);
 }
 
-static void sync_manual_macs_to_kernel(void)
-{
-	static char last_json[4096] = {0};
-	char buf[4096] = {0};
-	int pos = 0;
-	int first = 1;
-	int ret;
-
-	if (g_af_config.global.user_mode == 0) {
-		return;
-	}
-
-	ret = snprintf(buf + pos, sizeof(buf) - pos,
-		       "{\"op\":%d,\"data\":{\"mac_list\":[",
-		       AF_CMD_SET_MAC_LIST);
-	if (ret < 0 || ret >= (int)sizeof(buf))
-		return;
-	pos += ret;
-
-	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-		dev_node_t *node = dev_hash_table[i];
-		while (node) {
-			if (node->is_selected && node->is_time_active == 1) {
-				ret = snprintf(buf + pos, sizeof(buf) - pos,
-					       first ? "\"%s\"" : ",\"%s\"",
-					       node->mac);
-				if (ret < 0 || pos + ret >= (int)sizeof(buf)) {
-					return;
-				}
-				pos += ret;
-				first = 0;
-			}
-			node = node->next;
-		}
-	}
-	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
-	if (ret < 0 || pos + ret >= (int)sizeof(buf))
-		return;
-	pos += ret;
-
-	if (strcmp(buf, last_json) == 0)
-		return;
-
-	FILE *fp = fopen("/dev/appfilter", "w");
-	if (fp) {
-		fwrite(buf, 1, strlen(buf), fp);
-		fclose(fp);
-		LOG_INFO("sync manual macs to kernel: %s\n", buf);
-	}
-	strncpy(last_json, buf, sizeof(last_json) - 1);
-	last_json[sizeof(last_json) - 1] = '\0';
-}
-
-static void check_user_time_rules(void)
-{
-	int changed = 0;
-	time_t now = time(NULL);
-	struct tm *tm_info = localtime(&now);
-	int current_m = tm_info->tm_hour * 60 + tm_info->tm_min;
-
-	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-		dev_node_t *node = dev_hash_table[i];
-		while (node) {
-			if (node->is_selected) {
-				int active = 0;
-				if (g_af_config.global.user_mode == 0) {
-					active = 1;
-				} else {
-					int sm = atoi(node->start_time) * 60 + atoi(node->start_time + 3);
-					int em = atoi(node->end_time) * 60 + atoi(node->end_time + 3);
-					if (strlen(node->start_time) == 0) sm = 0;
-					if (strlen(node->end_time) == 0) em = 23 * 60 + 59;
-					if (sm <= em) {
-						active = (current_m >= sm && current_m <= em);
-					} else {
-						active = (current_m >= sm || current_m <= em);
-					}
-				}
-				
-				if (node->is_time_active != active) {
-					node->is_time_active = active;
-					changed = 1;
-				}
-			}
-			node = node->next;
-		}
-	}
-	
-	if (changed) {
-		sync_manual_macs_to_kernel();
-	}
-}
-
 void update_lan_ip(void)
 {
 	char ip_str[32] = {0};
@@ -878,11 +785,6 @@ int af_check_time_period_limit(af_time_config_t *t_config)
 			dev_node_t *node = dev_hash_table[i];
 			while (node) {
 				if (node->is_selected) {
-					if (node->is_time_active != 1) {
-						node->blocked = 0;
-						node = node->next;
-						continue;
-					}
 					int device_used = is_morning ? node->today_am_active_time
 								     : node->today_pm_active_time;
 					if (device_used >= max_allowed_time) {
@@ -972,21 +874,7 @@ void update_oaf_status(void)
 	int need_force = 0;
 
 	if (g_af_config.global.enable == 1) {
-		if (g_af_config.time.time_mode == 2) {
-			if (g_af_config.global.daily_limit_mode == 0) {
-				ret = af_check_time_valid(&g_af_config.time);
-			} else {
-				ret = 1;
-			}
-		} else if (g_af_config.time.time_mode == 0) {
-			if (g_af_config.global.app_filter_mode == 1) {
-				ret = af_check_time_valid(&g_af_config.time) ? 0 : 1;
-			} else {
-				ret = af_check_time_valid(&g_af_config.time);
-			}
-		} else {
-			ret = af_check_time_valid(&g_af_config.time);
-		}
+		ret = af_check_time_valid(&g_af_config.time);
 	}
 
 	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
@@ -1133,7 +1021,6 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 {
 	static int count = 0;
 	force_disconnect_tick(0);
-	check_user_time_rules();
 
 	if (count % 10 == 0) {
 		update_dev_list();
@@ -1167,14 +1054,6 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_app_filter_mode_status();
 		update_oaf_daily_limit_mode_status();
 		g_oaf_config_change = 0;
-
-		for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-			dev_node_t *node = dev_hash_table[i];
-			while (node) {
-				node->is_time_active = -1;
-				node = node->next;
-			}
-		}
 
 		if (g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
 			force_disconnect_tick(1);
