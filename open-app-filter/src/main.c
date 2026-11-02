@@ -595,25 +595,40 @@ void sync_blocked_macs_to_kernel(void)
 	char buf[4096] = {0};
 	int pos = 0;
 	int first = 1;
+	int ret;
 
-	pos += snprintf(buf + pos, sizeof(buf) - pos,
-			"{\"op\":%d,\"data\":{\"mac_list\":[",
-			AF_CMD_SET_BLOCKED_MAC_LIST);
+	ret = snprintf(buf + pos, sizeof(buf) - pos,
+		       "{\"op\":%d,\"data\":{\"mac_list\":[",
+		       AF_CMD_SET_BLOCKED_MAC_LIST);
+	if (ret < 0 || ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
 
 	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *node = dev_hash_table[i];
 		while (node) {
 			if (node->is_selected && node->blocked) {
-				if (!first)
-					pos += snprintf(buf + pos, sizeof(buf) - pos, ",");
-				pos += snprintf(buf + pos, sizeof(buf) - pos,
-						"\"%s\"", node->mac);
+				ret = snprintf(buf + pos, sizeof(buf) - pos,
+					       first ? "\"%s\"" : ",\"%s\"",
+					       node->mac);
+				if (ret < 0 ||
+				    pos + ret >= (int)sizeof(buf)) {
+					LOG_WARN("blocked mac list truncated "
+						 "at pos=%d, skip sync\n", pos);
+					return;
+				}
+				pos += ret;
 				first = 0;
 			}
 			node = node->next;
 		}
 	}
-	pos += snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	if (ret < 0 || pos + ret >= (int)sizeof(buf)) {
+		LOG_WARN("blocked mac list tail overflow, skip sync\n");
+		return;
+	}
+	pos += ret;
 
 	if (strcmp(buf, last_json) == 0)
 		return;
@@ -627,6 +642,7 @@ void sync_blocked_macs_to_kernel(void)
 		LOG_ERROR("open /dev/appfilter failed\n");
 	}
 	strncpy(last_json, buf, sizeof(last_json) - 1);
+	last_json[sizeof(last_json) - 1] = '\0';
 }
 
 int af_check_time_period_limit(af_time_config_t *t_config)
