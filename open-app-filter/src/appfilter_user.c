@@ -116,7 +116,6 @@ dev_node_t *add_dev_node(char *mac)
 	node->online = 0;
 	node->online_time = get_timestamp();
 	node->offline_time = get_timestamp();
-	node->is_time_active = -1;
 	if (dev_hash_table[hash] == NULL) {
 		dev_hash_table[hash] = node;
 	} else {
@@ -284,8 +283,6 @@ void update_dev_whitelist_flag(void)
 void clean_dev_selected_flag_iter(void *arg, dev_node_t *node)
 {
 	node->is_selected = 0;
-	node->start_time[0] = '\0';
-	node->end_time[0] = '\0';
 }
 
 void clean_dev_selected_flag(void)
@@ -307,11 +304,8 @@ void update_dev_selected_flag(void)
 			dev_node_t *node = dev_hash_table[i];
 
 			while (node) {
-				if (!node->is_whitelist) {
+				if (!node->is_whitelist)
 					node->is_selected = 1;
-					strcpy(node->start_time, "00:00");
-					strcpy(node->end_time, "23:59");
-				}
 				node = node->next;
 			}
 		}
@@ -330,21 +324,12 @@ void update_dev_selected_flag(void)
 		num = af_get_uci_list_num(uci_ctx, "appfilter", "af_user");
 		for (i = 0; i < num; i++) {
 			dev_node_t *node;
-			char start_time[16] = {0};
-			char end_time[16] = {0};
 
-			af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].mac", i, mac_str, sizeof(mac_str));
-			af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].start_time", i, start_time, sizeof(start_time));
-			af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].end_time", i, end_time, sizeof(end_time));
-
-			if (strlen(start_time) == 0) strcpy(start_time, "00:00");
-			if (strlen(end_time) == 0) strcpy(end_time, "23:59");
+			af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].mac", i, mac_str,
+					       sizeof(mac_str));
 			node = find_dev_node(mac_str);
-			if (node) {
+			if (node)
 				node->is_selected = 1;
-				strncpy(node->start_time, start_time, sizeof(node->start_time) - 1);
-				strncpy(node->end_time, end_time, sizeof(node->end_time) - 1);
-			}
 		}
 		uci_free_context(uci_ctx);
 		LOG_DEBUG("Manual mode: %d users from af_user config are selected\n", num);
