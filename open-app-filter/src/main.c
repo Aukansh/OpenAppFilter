@@ -716,6 +716,17 @@ static void check_user_time_rules(void)
 		dev_node_t *node = dev_hash_table[i];
 		while (node) {
 			if (node->is_selected) {
+				if (g_af_config.time.time_mode == 2) {
+					int wday = tm_info->tm_wday;
+					if (!g_af_config.time.daily_limit[wday].enable) {
+						if (node->is_time_active != 0) {
+							node->is_time_active = 0;
+							changed = 1;
+						}
+						node = node->next;
+						continue;
+					}
+				}
 				int sm = atoi(node->start_time) * 60 + atoi(node->start_time + 3);
 				int em = atoi(node->end_time) * 60 + atoi(node->end_time + 3);
 				int active = 0;
@@ -791,7 +802,7 @@ int af_check_time_period_limit(af_time_config_t *t_config)
 		g_af_status.remain_time = 0;
 		g_af_status.used_time = 0;
 
-		if (g_af_config.global.daily_limit_mode == 1 && g_af_config.global.user_mode == 0) {
+		if (g_af_config.global.daily_limit_mode == 1) {
 			for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 				dev_node_t *node = dev_hash_table[i];
 				while (node) {
@@ -970,8 +981,12 @@ void update_oaf_status(void)
 	int need_force = 0;
 
 	if (g_af_config.global.enable == 1) {
-		if (g_af_config.global.user_mode == 1) {
-			ret = 1;
+		if (g_af_config.time.time_mode == 2) {
+			if (g_af_config.global.daily_limit_mode == 0) {
+				ret = af_check_time_valid(&g_af_config.time);
+			} else {
+				ret = 0;
+			}
 		} else {
 			ret = af_check_time_valid(&g_af_config.time);
 		}
@@ -993,7 +1008,7 @@ void update_oaf_status(void)
 	if (cur_blocked_count > last_blocked_count)
 		need_force = 1;
 
-	if (need_force && g_af_config.global.user_mode == 0 && g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
+	if (need_force && g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
 		force_disconnect_tick(1);
 		LOG_INFO("force_disconnect triggered: ret=%d->%d, blocked=%d->%d\n", last_ret, ret, last_blocked_count, cur_blocked_count);
 	}
