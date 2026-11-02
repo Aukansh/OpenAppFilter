@@ -84,9 +84,6 @@ typedef struct dev_node
 	u_int32_t today_pm_active_time;
 	int is_selected; 
 	int blocked;
-	char start_time[8];
-	char end_time[8];
-	int is_time_active;
 	struct dev_node *next;
 } dev_node_t;
 

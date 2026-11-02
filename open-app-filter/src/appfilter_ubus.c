@@ -1566,8 +1566,6 @@ void all_users_callback(void *arg, dev_node_t *dev)
 		json_object_object_add(user_obj, "nickname", json_object_new_string(dev->nickname));
 		json_object_object_add(user_obj, "is_whitelist", json_object_new_int(dev->is_whitelist));
 		json_object_object_add(user_obj, "is_selected", json_object_new_int(dev->is_selected));
-		json_object_object_add(user_obj, "start_time", json_object_new_string(dev->start_time));
-		json_object_object_add(user_obj, "end_time", json_object_new_string(dev->end_time));
 	}
 
 	if (flag > 2) {
@@ -1700,7 +1698,6 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 	update_dev_nickname();
 	update_dev_visiting_info();
 	update_dev_whitelist_flag();
-	update_dev_selected_flag();
 	dev_foreach(&au_info, all_users_callback);
 
 	json_object_array_sort(au_info.users_array, compare_users);
@@ -1784,17 +1781,6 @@ static int handle_get_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 
 		struct json_object *user_obj = json_object_new_object();
 		json_object_object_add(user_obj, "mac", json_object_new_string(mac_str));
-		char start_time[16] = {0};
-		char end_time[16] = {0};
-		af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].start_time", i, start_time, sizeof(start_time));
-		af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].end_time", i, end_time, sizeof(end_time));
-
-		if (strlen(start_time) == 0) strcpy(start_time, "00:00");
-		if (strlen(end_time) == 0) strcpy(end_time, "23:59");
-		
-		json_object_object_add(user_obj, "start_time", json_object_new_string(start_time));
-		json_object_object_add(user_obj, "end_time", json_object_new_string(end_time));
-
 		dev_node_t *dev = find_dev_node(mac_str);
 		if (dev) {
 			json_object_object_add(user_obj, "nickname",
@@ -1988,10 +1974,6 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 
 	int len = json_object_array_length(mac_array);
 	printf("len: %d\n", len);
-	struct json_object *start_time_obj = json_object_object_get(req_obj, "start_time");
-	struct json_object *end_time_obj = json_object_object_get(req_obj, "end_time");
-	const char *start_time = start_time_obj ? json_object_get_string(start_time_obj) : "00:00";
-	const char *end_time = end_time_obj ? json_object_get_string(end_time_obj) : "23:59";
 	for (int i = 0; i < len; i++) {
 		struct json_object *mac_obj = json_object_array_get_idx(mac_array, i);
 		char mac_lower[32] = {0};
@@ -2000,8 +1982,6 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 
 		af_uci_add_section(uci_ctx, "appfilter", "af_user");
 		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].mac", mac_lower);
-		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].start_time", (char *)start_time);
-		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].end_time", (char *)end_time);
 	}
 	printf("add af_user ok\n");
 	af_uci_commit(uci_ctx, "appfilter");
