@@ -791,7 +791,7 @@ int af_check_time_period_limit(af_time_config_t *t_config)
 		g_af_status.remain_time = 0;
 		g_af_status.used_time = 0;
 
-		if (g_af_config.global.daily_limit_mode == 1) {
+		if (g_af_config.global.daily_limit_mode == 1 && g_af_config.global.user_mode == 0) {
 			for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 				dev_node_t *node = dev_hash_table[i];
 				while (node) {
@@ -970,7 +970,11 @@ void update_oaf_status(void)
 	int need_force = 0;
 
 	if (g_af_config.global.enable == 1) {
-		ret = af_check_time_valid(&g_af_config.time);
+		if (g_af_config.global.user_mode == 1) {
+			ret = 1;
+		} else {
+			ret = af_check_time_valid(&g_af_config.time);
+		}
 	}
 
 	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
@@ -989,7 +993,7 @@ void update_oaf_status(void)
 	if (cur_blocked_count > last_blocked_count)
 		need_force = 1;
 
-	if (need_force && g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
+	if (need_force && g_af_config.global.user_mode == 0 && g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
 		force_disconnect_tick(1);
 		LOG_INFO("force_disconnect triggered: ret=%d->%d, blocked=%d->%d\n", last_ret, ret, last_blocked_count, cur_blocked_count);
 	}
