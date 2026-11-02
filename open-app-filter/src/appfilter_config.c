@@ -246,7 +246,6 @@ int af_uci_get_list_value(struct uci_context *ctx, char *key, char *output, int 
 
 	int sep = 0;
 	struct uci_element *e = ptr.last;
-	int len = 0;
 	switch (e->type) {
 	case UCI_TYPE_SECTION:
 		ret = -1;
@@ -254,12 +253,24 @@ int af_uci_get_list_value(struct uci_context *ctx, char *key, char *output, int 
 	case UCI_TYPE_OPTION:
 		if (UCI_TYPE_LIST == ptr.o->type) {
 			memset(output, 0x0, out_len);
+			size_t used = 0;
 			uci_foreach_element(&ptr.o->v.list, e) {
-				len = strlen(output);
-				if (sep)
-					strncat(output + len, delimt, out_len);
-				len = strlen(output);
-				sprintf(output + len, "%s", e->name);
+				size_t need = strlen(e->name) +
+					      (sep ? strlen(delimt) : 0);
+				if (used + need + 1 > (size_t)out_len) {
+					LOG_WARN("af_uci_get_list_value: "
+						 "output truncated\n");
+					break;
+				}
+				if (sep) {
+					memcpy(output + used, delimt,
+					       strlen(delimt));
+					used += strlen(delimt);
+				}
+				memcpy(output + used, e->name,
+				       strlen(e->name));
+				used += strlen(e->name);
+				output[used] = '\0';
 				sep = 1;
 			}
 			ret = 0;
@@ -507,23 +518,36 @@ void init_app_name_table(void)
 	}
 	g_app_count = 0;
 	while (fgets(line_buf, sizeof(line_buf), fp)) {
+		char *pos1;
+		char app_info_buf[128] = {0};
+		int app_id;
+		char app_name[64] = {0};
+		size_t prefix_len;
+
 		if (strstr(line_buf, "#"))
 			continue;
 		if (strlen(line_buf) < 10)
 			continue;
 		if (!strstr(line_buf, ":"))
 			continue;
+		if (g_app_count >= MAX_SUPPORT_APP_NUM) {
+			LOG_WARN("app count exceeds %d\n",
+				 MAX_SUPPORT_APP_NUM);
+			break;
+		}
 
-		char *pos1 = strstr(line_buf, ":");
-		char app_info_buf[128] = {0};
-		int app_id;
-		char app_name[64] = {0};
-
-		memset(app_name, 0x0, sizeof(app_name));
-		strncpy(app_info_buf, line_buf, pos1 - line_buf);
-		sscanf(app_info_buf, "%d %s", &app_id, app_name);
+		pos1 = strstr(line_buf, ":");
+		prefix_len = (size_t)(pos1 - line_buf);
+		if (prefix_len >= sizeof(app_info_buf)) {
+			LOG_WARN("feature line prefix too long (%zu), " "skip\n", prefix_len);
+			continue;
+		}
+		memcpy(app_info_buf, line_buf, prefix_len);
+		app_info_buf[prefix_len] = '\0';
+		if (sscanf(app_info_buf, "%d %63s", &app_id, app_name) != 2)
+			continue;
 		app_name_table[g_app_count].id = app_id;
-		strcpy(app_name_table[g_app_count].name, app_name);
+		snprintf(app_name_table[g_app_count].name, sizeof(app_name_table[g_app_count].name), "%s", app_name);
 		g_app_count++;
 	}
 	fclose(fp);
@@ -540,11 +564,20 @@ void init_app_class_name_table(void)
 	}
 	g_cur_class_num = 0;
 	while (fgets(line_buf, sizeof(line_buf), fp)) {
-		int class_id;
-		char class_name[64] = {0};
+		int class_id = 0;
+		char class_name[MAX_CLASS_NAME_LEN] = {0};
 
-		sscanf(line_buf, "%d %*s %s", &class_id, class_name);
-		strcpy(CLASS_NAME_TABLE[class_id - 1], class_name);
+		if (sscanf(line_buf, "%d %*s %31s",
+			   &class_id, class_name) != 2) {
+			LOG_WARN("bad app_class line: %s\n", line_buf);
+			continue;
+		}
+		if (class_id < 1 || class_id > MAX_APP_TYPE) {
+			LOG_WARN("app_class id out of range: %d\n", class_id);
+			continue;
+		}
+		snprintf(CLASS_NAME_TABLE[class_id - 1],
+			 sizeof(CLASS_NAME_TABLE[class_id - 1]), "%s", class_name);
 		g_cur_class_num++;
 	}
 	fclose(fp);

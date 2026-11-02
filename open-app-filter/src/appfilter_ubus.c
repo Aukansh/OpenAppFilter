@@ -652,10 +652,16 @@ static int parse_feature_cfg(struct json_object *class_list)
 			app_list = json_object_new_array();
 		} else if (current_class) {
 			char *p_end = strstr(line, ":");
-			if (!p_end)
+			size_t app_len;
+
+			if (!p_end) continue;
+			app_len = (size_t)(p_end - line);
+			if (app_len >= sizeof(app_buf)) {
+				LOG_WARN("feature line prefix too long " "(%zu), skip\n", app_len);
 				continue;
-			strncpy(app_buf, line, p_end - line);
-			app_buf[p_end - line] = '\0';
+			}
+			memcpy(app_buf, line, app_len);
+			app_buf[app_len] = '\0';
 			char *appid_str = strtok(app_buf, " ");
 			char *name = strtok(NULL, " ");
 			if (appid_str && name) {
@@ -1085,7 +1091,9 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 
 	/* Get days (global weekday_list) */
 	char days_str[128] = {0};
+	char days_str_copy[128] = {0};
 	af_uci_get_value(uci_ctx, "appfilter.time.days", days_str, sizeof(days_str));
+	strncpy(days_str_copy, days_str, sizeof(days_str_copy) - 1);
 	printf("days_str: %s\n", days_str);
 	struct json_object *days_array = json_object_new_array();
 	char *day = strtok(days_str, " ");
@@ -1117,8 +1125,6 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 
 	/* Parse global weekday_list (used as fallback if time period doesn't have weekdays) */
 	int global_weekdays[7] = {0};
-	char days_str_copy[128] = {0};
-	strncpy(days_str_copy, days_str, sizeof(days_str_copy) - 1);
 	char *day_token = strtok(days_str_copy, " ");
 	while (day_token) {
 		int day_val = atoi(day_token);
@@ -1362,6 +1368,10 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 		}
 		af_uci_delete(uci_ctx, "appfilter.time.time");
 		int time_list_len = json_object_array_length(time_list_obj);
+		if (time_list_len > MAX_TIME_LIST) {
+			LOG_WARN("time_list length %d exceeds " "MAX_TIME_LIST=%d, truncate\n", time_list_len, MAX_TIME_LIST);
+			time_list_len = MAX_TIME_LIST;
+		}
 		for (int i = 0; i < time_list_len; i++) {
 			struct json_object *time_obj = json_object_array_get_idx(time_list_obj, i);
 			struct json_object *start_time_obj = json_object_object_get(time_obj, "start");
@@ -2048,10 +2058,12 @@ static int handle_set_nickname(struct ubus_context *ctx, struct ubus_object *obj
 		af_uci_set_array_value(uci_ctx, "user_info.@user_info[%d].nickname", index,
 				       (char *)json_object_get_string(nickname_obj));
 	} else {
-		char uci_option[128] = {0};
-		sprintf(uci_option, "user_info.@user_info[%d]", index);
-		af_uci_delete(uci_ctx, uci_option);
-		printf("delete nickname mac = %s\n", json_object_get_string(mac_obj));
+		if (index != -1) {
+			char uci_option[128] = {0};
+			snprintf(uci_option, sizeof(uci_option), "user_info.@user_info[%d]", index);
+			af_uci_delete(uci_ctx, uci_option);
+			printf("delete nickname mac = %s\n", json_object_get_string(mac_obj));
+		}
 	}
 
 	af_uci_commit(uci_ctx, "user_info");

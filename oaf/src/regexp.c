@@ -56,6 +56,9 @@ static void regexp_free(RE *regexp)
 	for(; regexp; regexp = tmp)
 	{
 		tmp = regexp->next;
+		if (regexp->type == LIST && regexp->ccl) {
+			kfree(regexp->ccl);
+		}
 		kfree(regexp);
 	}
 }
@@ -150,8 +153,13 @@ static RE* compile(char *regexp)
 	}
 
 	tail->next = NULL;
-	if(err_flag)
-	{
+	if(err_flag) {
+		if (tmp) {
+			if (tmp->type == LIST && tmp->ccl) {
+				kfree(tmp->ccl);
+			}
+			kfree(tmp);
+		}
 		regexp_free(head.next);
 		return NULL;
 	}

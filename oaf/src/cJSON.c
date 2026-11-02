@@ -310,13 +310,14 @@ static char *print_string(cJSON *item)
 {
 	return print_string_ptr(item->valuestring);
 }
+#define CJSON_NESTING_LIMIT 64
 
 // Predeclare these prototypes.
-static const char *parse_value(cJSON *item, const char *value);
+static const char *parse_value(cJSON *item, const char *value, int depth);
 static char *print_value(cJSON *item, int depth);
-static const char *parse_array(cJSON *item, const char *value);
+static const char *parse_array(cJSON *item, const char *value, int depth);
 static char *print_array(cJSON *item, int depth);
-static const char *parse_object(cJSON *item, const char *value);
+static const char *parse_object(cJSON *item, const char *value, int depth);
 static char *print_object(cJSON *item, int depth);
 
 // Utility to jump whitespace and cr/lf
@@ -337,7 +338,7 @@ cJSON *cJSON_Parse(const char *value)
 		return 0;	/* memory fail */
 	}
 
-	if (!parse_value(c, skip(value))) {
+	if (!parse_value(c, skip(value), 0)) {
 		cJSON_Delete(c);
 		return 0;
 	}
@@ -351,8 +352,11 @@ char *cJSON_Print(cJSON *item)
 }
 
 // Parser core - when encountering text, process appropriately.
-static const char *parse_value(cJSON *item, const char *value)
+static const char *parse_value(cJSON *item, const char *value, int depth)
 {
+	if (depth > CJSON_NESTING_LIMIT) {
+		return 0;
+	}
 	if (!value) {
 		return 0;	// Fail on null.
 	}
@@ -376,10 +380,10 @@ static const char *parse_value(cJSON *item, const char *value)
 		return parse_number(item, value);
 	}
 	if (*value == '[') {
-		return parse_array(item, value);
+		return parse_array(item, value, depth + 1);
 	}
 	if (*value == '{') {
-		return parse_object(item, value);
+		return parse_object(item, value, depth + 1);
 	}
 
 	return 0;	// failure.
@@ -417,7 +421,7 @@ static char *print_value(cJSON *item, int depth)
 }
 
 // Build an array from input text.
-static const char *parse_array(cJSON *item, const char *value)
+static const char *parse_array(cJSON *item, const char *value, int depth)
 {
 	cJSON *child;
 
@@ -435,7 +439,7 @@ static const char *parse_array(cJSON *item, const char *value)
 	if (!item->child) {
 		return 0;	// memory fail
 	}
-	value = skip(parse_value(child, skip(value)));	// skip any spacing, get the value.
+	value = skip(parse_value(child, skip(value), depth));
 	if (!value) {
 		return 0;
 	}
@@ -449,7 +453,7 @@ static const char *parse_array(cJSON *item, const char *value)
 		child->next = new_item;
 		new_item->prev = child;
 		child = new_item;
-		value = skip(parse_value(child, skip(value + 1)));
+		value = skip(parse_value(child, skip(value + 1), depth));
 		if (!value) {
 			return 0;	// memory fail
 		}
@@ -496,7 +500,7 @@ static char *print_array(cJSON *item, int depth)
 }
 
 // Build an object from the text.
-static const char *parse_object(cJSON *item, const char *value)
+static const char *parse_object(cJSON *item, const char *value, int depth)
 {
 	cJSON *child;
 
@@ -520,7 +524,7 @@ static const char *parse_object(cJSON *item, const char *value)
 	if (*value != ':') {
 		return 0;	// fail!
 	}
-	value = skip(parse_value(child, skip(value + 1)));	// skip any spacing, get the value.
+	value = skip(parse_value(child, skip(value + 1), depth));
 	if (!value) {
 		return 0;
 	}
@@ -543,7 +547,7 @@ static const char *parse_object(cJSON *item, const char *value)
 		if (*value != ':') {
 			return 0;	// fail!
 		}
-		value = skip(parse_value(child, skip(value + 1)));	// skip any spacing, get the value.
+		value = skip(parse_value(child, skip(value + 1), depth));
 		if (!value) {
 			return 0;
 		}
