@@ -985,7 +985,13 @@ void update_oaf_status(void)
 			if (g_af_config.global.daily_limit_mode == 0) {
 				ret = af_check_time_valid(&g_af_config.time);
 			} else {
-				ret = 0;
+				ret = 1;
+			}
+		} else if (g_af_config.time.time_mode == 0) {
+			if (g_af_config.global.app_filter_mode == 1) {
+				ret = af_check_time_valid(&g_af_config.time) ? 0 : 1;
+			} else {
+				ret = af_check_time_valid(&g_af_config.time);
 			}
 		} else {
 			ret = af_check_time_valid(&g_af_config.time);
