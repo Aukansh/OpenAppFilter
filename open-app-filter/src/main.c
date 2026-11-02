@@ -645,6 +645,102 @@ void sync_blocked_macs_to_kernel(void)
 	last_json[sizeof(last_json) - 1] = '\0';
 }
 
+static void sync_manual_macs_to_kernel(void)
+{
+	static char last_json[4096] = {0};
+	char buf[4096] = {0};
+	int pos = 0;
+	int first = 1;
+	int ret;
+
+	if (g_af_config.global.user_mode == 0) {
+		return;
+	}
+
+	ret = snprintf(buf + pos, sizeof(buf) - pos,
+		       "{\"op\":%d,\"data\":{\"mac_list\":[",
+		       AF_CMD_SET_MAC_LIST);
+	if (ret < 0 || ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			if (node->is_selected && node->is_time_active) {
+				ret = snprintf(buf + pos, sizeof(buf) - pos,
+					       first ? "\"%s\"" : ",\"%s\"",
+					       node->mac);
+				if (ret < 0 ||
+				    pos + ret >= (int)sizeof(buf)) {
+					LOG_WARN("manual mac list truncated "
+						 "at pos=%d, skip sync\n", pos);
+					return;
+				}
+				pos += ret;
+				first = 0;
+			}
+			node = node->next;
+		}
+	}
+	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	if (ret < 0 || pos + ret >= (int)sizeof(buf)) {
+		LOG_WARN("manual mac list tail overflow, skip sync\n");
+		return;
+	}
+	pos += ret;
+
+	if (strcmp(buf, last_json) == 0)
+		return;
+
+	FILE *fp = fopen("/dev/appfilter", "w");
+	if (fp) {
+		fwrite(buf, 1, strlen(buf), fp);
+		fclose(fp);
+		LOG_INFO("sync manual macs to kernel: %s\n", buf);
+	} else {
+		LOG_ERROR("open /dev/appfilter failed\n");
+	}
+	strncpy(last_json, buf, sizeof(last_json) - 1);
+	last_json[sizeof(last_json) - 1] = '\0';
+}
+
+static void check_user_time_rules(void)
+{
+	int changed = 0;
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	int current_m = tm_info->tm_hour * 60 + tm_info->tm_min;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			if (node->is_selected) {
+				int sm = atoi(node->start_time) * 60 + atoi(node->start_time + 3);
+				int em = atoi(node->end_time) * 60 + atoi(node->end_time + 3);
+				int active = 0;
+				
+				if (sm <= em) {
+					active = (current_m >= sm && current_m <= em);
+				} else {
+					active = (current_m >= sm || current_m <= em);
+				}
+				
+				if (node->is_time_active != active) {
+					node->is_time_active = active;
+					changed = 1;
+					LOG_INFO("user %s time active changed to %d\n", node->mac, active);
+				}
+			}
+			node = node->next;
+		}
+	}
+	
+	if (changed) {
+		sync_manual_macs_to_kernel();
+	}
+}
+
 int af_check_time_period_limit(af_time_config_t *t_config)
 {
 	int total_active_time = 0;
@@ -1021,6 +1117,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 {
 	static int count = 0;
 	force_disconnect_tick(0);
+	check_user_time_rules();
 
 	if (count % 10 == 0) {
 		update_dev_list();
@@ -1054,6 +1151,14 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_app_filter_mode_status();
 		update_oaf_daily_limit_mode_status();
 		g_oaf_config_change = 0;
+
+		for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+			dev_node_t *node = dev_hash_table[i];
+			while (node) {
+				node->is_time_active = -1;
+				node = node->next;
+			}
+		}
 
 		if (g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0) {
 			force_disconnect_tick(1);
