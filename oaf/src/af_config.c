@@ -155,6 +155,11 @@ static ssize_t af_cdev_write(struct file *filp, const char *buffer, size_t count
 {
 	struct af_cdev_file *file = filp->private_data;
 	int ret;
+
+	if (file->size >= sizeof(file->buf)) {
+		return -EINVAL;
+	}
+
 	if (count > sizeof(file->buf) - 1 - file->size) {
 		AF_ERROR("config overflow, cur_size: %zu, block_size: %zu, max_size: %zu",
 			 file->size, count, sizeof(file->buf));
