@@ -1009,7 +1009,7 @@ static int match_feature(flow_info_t *flow)
 			if (af_match_one(flow, node)) {
 				AF_LMT_INFO("match feature, appid=%d, feature = %s\n", node->app_id, node->feature);
 				flow->app_id = node->app_id;
-				flow->feature = node;
+				flow->ignore = node->ignore;
 				strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
 				feature_list_read_unlock();
 				return AF_TRUE;
