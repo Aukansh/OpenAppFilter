@@ -72,6 +72,10 @@ static RE* compile(char *regexp)
 	for(tail = &head; *regexp != '\0' && err_flag == 0; regexp++)
 	{
 		tmp = getmem(sizeof(RE));
+		if (!tmp) {
+			err_flag = 1;
+			break;
+		}
 		switch(*regexp){
 			case '\\':
 				regexp++;
@@ -80,6 +84,7 @@ static RE* compile(char *regexp)
 					tmp->type = LIST;
 					tmp->nccl = 0;
 					tmp->ccl = getmem(11);
+					if (!tmp->ccl) { err_flag = 1; break; }
 					creat_list(tmp->ccl, '0','9');
 					tmp->ccl[10] = '\0';
 				}else if(*regexp == 'D')
@@ -87,6 +92,7 @@ static RE* compile(char *regexp)
 					tmp->type = LIST;
 					tmp->nccl = 1;
 					tmp->ccl = getmem(11);
+					if (!tmp->ccl) { err_flag = 1; break; }
 					creat_list(tmp->ccl, '0','9');
 					tmp->ccl[10] = '\0';
 				}else
@@ -117,6 +123,7 @@ static RE* compile(char *regexp)
 				break;
 			case '[':
 				pstr = tmp->ccl = getmem(256);
+				if (!tmp->ccl) { err_flag = 1; break; }
 				tmp->nccl = 0;
 				if(*++regexp == '^')
 				{

@@ -403,6 +403,9 @@ static void af_init_feature(char *feature_str)
 		}
 		if (*p == ']' && pos != NULL) {
 			len = p - pos;
+			if (len > MAX_FEATURE_LINE_LEN - 1) {
+				len = MAX_FEATURE_LINE_LEN - 1;
+			}
 		}
 	}
 
@@ -1010,6 +1013,7 @@ static int match_feature(flow_info_t *flow)
 				AF_LMT_INFO("match feature, appid=%d, feature = %s\n", node->app_id, node->feature);
 				flow->app_id = node->app_id;
 				flow->ignore = node->ignore;
+				flow->feature = node;
 				strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
 				feature_list_read_unlock();
 				return AF_TRUE;
