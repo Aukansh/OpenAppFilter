@@ -284,6 +284,8 @@ void update_dev_whitelist_flag(void)
 void clean_dev_selected_flag_iter(void *arg, dev_node_t *node)
 {
 	node->is_selected = 0;
+	node->start_time[0] = '\0';
+	node->end_time[0] = '\0';
 }
 
 void clean_dev_selected_flag(void)

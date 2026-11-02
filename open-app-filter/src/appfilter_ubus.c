@@ -1698,6 +1698,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 	update_dev_nickname();
 	update_dev_visiting_info();
 	update_dev_whitelist_flag();
+	update_dev_selected_flag();
 	dev_foreach(&au_info, all_users_callback);
 
 	json_object_array_sort(au_info.users_array, compare_users);
