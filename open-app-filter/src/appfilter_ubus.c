@@ -111,8 +111,7 @@ void ubus_dump_visit_list(struct blob_buf *b, const char *mac)
 				visit_info_t *p_info = node->visit_htable[j];
 
 				while (p_info) {
-					char *first_time_str = format_time(p_info->first_time);
-					char *latest_time_str = format_time(p_info->latest_time);
+					// 删除了无用的 format_time 和 free
 
 					void *s = blobmsg_open_table(b, NULL);
 					blobmsg_add_string(b, "appname", "unknown");
@@ -122,10 +121,6 @@ void ubus_dump_visit_list(struct blob_buf *b, const char *mac)
 					blobmsg_add_u32(b, "latest_time", p_info->latest_time);
 					blobmsg_close_table(b, s);
 
-					if (first_time_str)
-						free(first_time_str);
-					if (latest_time_str)
-						free(latest_time_str);
 					p_info = p_info->next;
 				}
 			}
@@ -210,16 +205,11 @@ static int appfilter_handle_dev_visit_list(struct ubus_context *ctx,
 		visit_info_t *p_info = node->visit_htable[j];
 
 		while (p_info) {
-			char *first_time_str = format_time(p_info->first_time);
-			char *latest_time_str = format_time(p_info->latest_time);
+			// 删除了无用的 format_time
 			int total_time = p_info->latest_time - p_info->first_time;
 
 			if (strlen(get_app_name_by_id(p_info->appid)) == 0) {
 				p_info = p_info->next;
-				if (first_time_str)
-					free(first_time_str);
-				if (latest_time_str)
-					free(latest_time_str);
 				continue;
 			}
 			struct json_object *visit_obj = json_object_new_object();
@@ -236,10 +226,6 @@ static int appfilter_handle_dev_visit_list(struct ubus_context *ctx,
 			json_object_object_add(visit_obj, "tt", json_object_new_int(total_time));
 			json_object_array_add(visit_array, visit_obj);
 
-			if (first_time_str)
-				free(first_time_str);
-			if (latest_time_str)
-				free(latest_time_str);
 			p_info = p_info->next;
 		}
 	}
@@ -261,6 +247,7 @@ static int appfilter_handle_dev_visit_list(struct ubus_context *ctx,
 			struct json_object *visit_obj = json_object_array_get_idx(visit_array, i);
 
 			if (visit_obj) {
+				// 恢复 json_object_get 以兼容老版本 json-c
 				json_object_get(visit_obj);
 				json_object_array_add(paged_array, visit_obj);
 			}
@@ -300,25 +287,25 @@ void update_app_visit_time_list(const char *mac, struct app_visit_stat_info *vis
 	}
 	for (int i = 0; i < MAX_APP_TYPE; i++) {
 		for (int j = 0; j < MAX_APP_ID_NUM; j++) {
-			unsigned long long min = visit_info->visit_list[0].total_time;
-			int min_index = 0;
-
+			// 修复了 Top-N 统计逻辑
 			if (node->stat[i][j].total_time == 0)
 				continue;
+				
 			if (num < MAX_APP_STAT_NUM) {
-				min_index = num;
+				visit_info->visit_list[num].total_time = node->stat[i][j].total_time;
+				visit_info->visit_list[num].app_id = (i + 1) * 1000 + j + 1;
+				num++;
 			} else {
+				int min_index = 0;
 				for (int s = 0; s < MAX_APP_STAT_NUM; s++) {
-					if (visit_info->visit_list[s].total_time < min) {
+					if (visit_info->visit_list[s].total_time < visit_info->visit_list[min_index].total_time) {
 						min_index = s;
-						break;
 					}
 				}
-			}
-			num++;
-			if (node->stat[i][j].total_time > visit_info->visit_list[min_index].total_time) {
-				visit_info->visit_list[min_index].total_time = node->stat[i][j].total_time;
-				visit_info->visit_list[min_index].app_id = (i + 1) * 1000 + j + 1;
+				if (node->stat[i][j].total_time > visit_info->visit_list[min_index].total_time) {
+					visit_info->visit_list[min_index].total_time = node->stat[i][j].total_time;
+					visit_info->visit_list[min_index].app_id = (i + 1) * 1000 + j + 1;
+				}
 			}
 		}
 	}
@@ -724,8 +711,11 @@ static int handle_get_app_filter(struct ubus_context *ctx, struct ubus_object *o
 		return 0;
 	}
 	char *appfilter_buf = (char *)malloc(MAX_APPFILTER_STR_LEN);
-	if (!appfilter_buf)
+	if (!appfilter_buf) {
+		// 修复了内存泄漏
+		uci_free_context(uci_ctx);
 		return 0;
+	}
 	appfilter_buf[0] = '\0';
 	struct json_object *response = json_object_new_object();
 	struct json_object *app_list = json_object_new_array();
@@ -848,6 +838,7 @@ static int handle_set_app_filter(struct ubus_context *ctx, struct ubus_object *o
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -961,6 +952,7 @@ static int handle_set_app_filter_base(struct ubus_context *ctx, struct ubus_obje
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -980,7 +972,8 @@ static int handle_get_app_filter_adv(struct ubus_context *ctx, struct ubus_objec
 		printf("Failed to allocate UCI context\n");
 		return 0;
 	}
-	char lan_ifname[16];
+	// 修复了未初始化问题
+	char lan_ifname[16] = {0};
 
 	int tcp_rst = af_uci_get_int_value(uci_ctx, "appfilter.global.tcp_rst");
 	af_uci_get_value(uci_ctx, "appfilter.global.lan_ifname", lan_ifname, sizeof(lan_ifname));
@@ -1053,6 +1046,7 @@ static int handle_set_app_filter_adv(struct ubus_context *ctx, struct ubus_objec
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -1163,9 +1157,15 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 
 		char *delimiter = strchr(time_period, '-');
 		if (delimiter) {
-			strncpy(start, time_period, delimiter - time_period);
-			start[delimiter - time_period] = '\0';
-			strcpy(end, delimiter + 1);
+			// ===== 安全拷贝，防止旧版解析栈溢出 =====
+			size_t start_len = delimiter - time_period;
+			if (start_len >= sizeof(start)) start_len = sizeof(start) - 1;
+			strncpy(start, time_period, start_len);
+			start[start_len] = '\0';
+
+			strncpy(end, delimiter + 1, sizeof(end) - 1);
+			end[sizeof(end) - 1] = '\0';
+			// ========================================
 
 			printf("ubus period[%d] parsed: start=%s, end=%s\n",
 			       period_count, start, end);
@@ -1526,6 +1526,8 @@ EXIT:
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	// 统一添加 code
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -1663,6 +1665,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 	int page = 0;
 	int page_size = 20; /* Default page size */
 
+	// 恢复原有的 uci 上下文分配，避免破坏依赖
 	struct uci_context *uci_ctx = uci_alloc_context();
 	if (!uci_ctx) {
 		printf("Failed to allocate UCI context\n");
@@ -1717,6 +1720,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 			struct json_object *user_obj =
 				json_object_array_get_idx(au_info.users_array, i);
 			if (user_obj) {
+				// 恢复原有的引用计数递增逻辑，兼容老版本 json-c
 				json_object_get(user_obj); /* Increment reference count */
 				json_object_array_add(paged_array, user_obj);
 			}
@@ -1741,7 +1745,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 		json_object_put(req_obj);
 	if (msg_obj_str)
 		free(msg_obj_str);
-	uci_free_context(uci_ctx);
+	uci_free_context(uci_ctx); // 恢复释放
 
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
@@ -1852,6 +1856,7 @@ static int handle_set_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -1928,6 +1933,7 @@ static int handle_del_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -1994,6 +2000,7 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -2075,6 +2082,7 @@ static int handle_set_nickname(struct ubus_context *ctx, struct ubus_object *obj
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -2331,6 +2339,7 @@ static int handle_add_whitelist_user(struct ubus_context *ctx, struct ubus_objec
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -2372,6 +2381,7 @@ static int handle_service_config(struct ubus_context *ctx, struct ubus_object *o
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
@@ -2433,6 +2443,7 @@ static int handle_del_whitelist_user(struct ubus_context *ctx, struct ubus_objec
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
+	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
 	blob_buf_free(&b);
