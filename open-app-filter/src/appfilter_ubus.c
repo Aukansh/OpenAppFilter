@@ -111,8 +111,6 @@ void ubus_dump_visit_list(struct blob_buf *b, const char *mac)
 				visit_info_t *p_info = node->visit_htable[j];
 
 				while (p_info) {
-					// 删除了无用的 format_time 和 free
-
 					void *s = blobmsg_open_table(b, NULL);
 					blobmsg_add_string(b, "appname", "unknown");
 					blobmsg_add_u32(b, "appid", p_info->appid);
@@ -205,7 +203,6 @@ static int appfilter_handle_dev_visit_list(struct ubus_context *ctx,
 		visit_info_t *p_info = node->visit_htable[j];
 
 		while (p_info) {
-			// 删除了无用的 format_time
 			int total_time = p_info->latest_time - p_info->first_time;
 
 			if (strlen(get_app_name_by_id(p_info->appid)) == 0) {
@@ -247,7 +244,6 @@ static int appfilter_handle_dev_visit_list(struct ubus_context *ctx,
 			struct json_object *visit_obj = json_object_array_get_idx(visit_array, i);
 
 			if (visit_obj) {
-				// 恢复 json_object_get 以兼容老版本 json-c
 				json_object_get(visit_obj);
 				json_object_array_add(paged_array, visit_obj);
 			}
@@ -287,10 +283,9 @@ void update_app_visit_time_list(const char *mac, struct app_visit_stat_info *vis
 	}
 	for (int i = 0; i < MAX_APP_TYPE; i++) {
 		for (int j = 0; j < MAX_APP_ID_NUM; j++) {
-			// 修复了 Top-N 统计逻辑
 			if (node->stat[i][j].total_time == 0)
 				continue;
-				
+
 			if (num < MAX_APP_STAT_NUM) {
 				visit_info->visit_list[num].total_time = node->stat[i][j].total_time;
 				visit_info->visit_list[num].app_id = (i + 1) * 1000 + j + 1;
@@ -426,12 +421,6 @@ void update_top5_app(dev_node_t *node, app_visit_time_info_t top5_app_list[])
 
 	qsort((void *)app_visit_array, app_visit_num,
 	      sizeof(app_visit_time_info_t), visit_time_compare);
-#if 0
-	for (i = 0; i < app_visit_num; i++) {
-		printf("appid %d-----------total time %llu\n",
-		       app_visit_array[i].app_id, app_visit_array[i].total_time);
-	}
-#endif
 	for (int i = 0; i < 5; i++)
 		top5_app_list[i] = app_visit_array[i];
 }
@@ -712,7 +701,6 @@ static int handle_get_app_filter(struct ubus_context *ctx, struct ubus_object *o
 	}
 	char *appfilter_buf = (char *)malloc(MAX_APPFILTER_STR_LEN);
 	if (!appfilter_buf) {
-		// 修复了内存泄漏
 		uci_free_context(uci_ctx);
 		return 0;
 	}
@@ -972,7 +960,6 @@ static int handle_get_app_filter_adv(struct ubus_context *ctx, struct ubus_objec
 		printf("Failed to allocate UCI context\n");
 		return 0;
 	}
-	// 修复了未初始化问题
 	char lan_ifname[16] = {0};
 
 	int tcp_rst = af_uci_get_int_value(uci_ctx, "appfilter.global.tcp_rst");
@@ -1157,7 +1144,6 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 
 		char *delimiter = strchr(time_period, '-');
 		if (delimiter) {
-			// ===== 安全拷贝，防止旧版解析栈溢出 =====
 			size_t start_len = delimiter - time_period;
 			if (start_len >= sizeof(start)) start_len = sizeof(start) - 1;
 			strncpy(start, time_period, start_len);
@@ -1165,7 +1151,6 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 
 			strncpy(end, delimiter + 1, sizeof(end) - 1);
 			end[sizeof(end) - 1] = '\0';
-			// ========================================
 
 			printf("ubus period[%d] parsed: start=%s, end=%s\n",
 			       period_count, start, end);
@@ -1526,7 +1511,6 @@ EXIT:
 	free(msg_obj_str);
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
-	// 统一添加 code
 	json_object_object_add(response, "code", json_object_new_int(0));
 	blobmsg_add_object(&b, response);
 	ubus_send_reply(ctx, req, b.head);
@@ -1665,7 +1649,6 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 	int page = 0;
 	int page_size = 20; /* Default page size */
 
-	// 恢复原有的 uci 上下文分配，避免破坏依赖
 	struct uci_context *uci_ctx = uci_alloc_context();
 	if (!uci_ctx) {
 		printf("Failed to allocate UCI context\n");
@@ -1720,8 +1703,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 			struct json_object *user_obj =
 				json_object_array_get_idx(au_info.users_array, i);
 			if (user_obj) {
-				// 恢复原有的引用计数递增逻辑，兼容老版本 json-c
-				json_object_get(user_obj); /* Increment reference count */
+				json_object_get(user_obj);
 				json_object_array_add(paged_array, user_obj);
 			}
 		}
@@ -1745,7 +1727,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 		json_object_put(req_obj);
 	if (msg_obj_str)
 		free(msg_obj_str);
-	uci_free_context(uci_ctx); // 恢复释放
+	uci_free_context(uci_ctx);
 
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
