@@ -79,8 +79,8 @@ af_mac_node_t *af_mac_add(unsigned char *mac)
 	/* Only log via debug level to avoid spamming dmesg when the whole
 	 * list is refreshed by user-space (flush + re-add on each config). */
 	AF_DEBUG("add user mac=" MAC_FMT "\n", MAC_ARRAY(node->mac));
-	total_mac++;
 	write_lock_bh(&af_mac_lock);
+	total_mac++;
 	list_add(&(node->list), &af_mac_htable[index]);
 	write_unlock_bh(&af_mac_lock);
 	return node;
