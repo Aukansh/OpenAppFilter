@@ -244,6 +244,7 @@ static int appfilter_handle_dev_visit_list(struct ubus_context *ctx,
 			struct json_object *visit_obj = json_object_array_get_idx(visit_array, i);
 
 			if (visit_obj) {
+				json_object_get(visit_obj);
 				json_object_array_add(paged_array, visit_obj);
 			}
 		}
@@ -359,6 +360,31 @@ static int appfilter_handle_visit_list(struct ubus_context *ctx,
 	return 0;
 }
 
+static int handle_debug(struct ubus_context *ctx, struct ubus_object *obj,
+			struct ubus_request_data *req, const char *method,
+			struct blob_attr *msg)
+{
+	blob_buf_init(&b, 0);
+	char *msg_obj_str = blobmsg_format_json(msg, true);
+	if (!msg_obj_str) {
+		printf("format json failed\n");
+		return 0;
+	}
+
+	struct json_object *req_obj = json_tokener_parse(msg_obj_str);
+	struct json_object *debug_obj = json_object_object_get(req_obj, "debug");
+
+	if (debug_obj) {
+		current_log_level = json_object_get_int(debug_obj);
+		LOG_WARN("debug level set to %d\n", current_log_level);
+	}
+
+	ubus_send_reply(ctx, req, b.head);
+	json_object_put(req_obj);
+	free(msg_obj_str);
+	return 0;
+}
+
 typedef struct app_visit_time_info {
 	int app_id;
 	unsigned long long total_time;
@@ -395,12 +421,6 @@ void update_top5_app(dev_node_t *node, app_visit_time_info_t top5_app_list[])
 
 	qsort((void *)app_visit_array, app_visit_num,
 	      sizeof(app_visit_time_info_t), visit_time_compare);
-#if 0
-	for (i = 0; i < app_visit_num; i++) {
-		printf("appid %d-----------total time %llu\n",
-		       app_visit_array[i].app_id, app_visit_array[i].total_time);
-	}
-#endif
 	for (int i = 0; i < 5; i++)
 		top5_app_list[i] = app_visit_array[i];
 }
@@ -455,6 +475,7 @@ static int appfilter_handle_dev_list(struct ubus_context *ctx,
 		}
 	}
 
+END:
 	json_object_object_add(root_obj, "devlist", dev_array);
 	blob_buf_init(&b, 0);
 	blobmsg_add_object(&b, root_obj);
@@ -1123,9 +1144,13 @@ static int handle_get_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 
 		char *delimiter = strchr(time_period, '-');
 		if (delimiter) {
-			strncpy(start, time_period, delimiter - time_period);
-			start[delimiter - time_period] = '\0';
-			strcpy(end, delimiter + 1);
+			size_t start_len = delimiter - time_period;
+			if (start_len >= sizeof(start)) start_len = sizeof(start) - 1;
+			strncpy(start, time_period, start_len);
+			start[start_len] = '\0';
+
+			strncpy(end, delimiter + 1, sizeof(end) - 1);
+			end[sizeof(end) - 1] = '\0';
 
 			printf("ubus period[%d] parsed: start=%s, end=%s\n",
 			       period_count, start, end);
@@ -1293,57 +1318,6 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 	}
 	printf("mode_obj: %d\n", json_object_get_int(mode_obj));
 
-	mode = json_object_get_int(mode_obj);
-
-	struct json_object *weekday_list_obj = json_object_object_get(req_obj, "weekday_list");
-	struct json_object *time_list_obj = NULL;
-	struct json_object *deny_time_obj = NULL;
-	struct json_object *allow_time_obj = NULL;
-	struct json_object *start_time_obj = NULL;
-	struct json_object *end_time_obj = NULL;
-	struct json_object *daily_time_list_obj = NULL;
-
-	if (mode == 0) {
-		time_list_obj = json_object_object_get(req_obj, "time_list");
-		if (!time_list_obj) {
-			printf("time_list_obj is NULL\n");
-			json_object_put(req_obj);
-			free(msg_obj_str);
-			return 0;
-		}
-		/* Deep validation: ensure all time items have start and end */
-		int temp_len = json_object_array_length(time_list_obj);
-		for (int i = 0; i < temp_len; i++) {
-			struct json_object *t_obj = json_object_array_get_idx(time_list_obj, i);
-			struct json_object *st_obj = json_object_object_get(t_obj, "start");
-			struct json_object *et_obj = json_object_object_get(t_obj, "end");
-			if (!st_obj || !et_obj) {
-				printf("time_list item %d missing start/end\n", i);
-				json_object_put(req_obj);
-				free(msg_obj_str);
-				return 0;
-			}
-		}
-	} else if (mode == 1) {
-		deny_time_obj = json_object_object_get(req_obj, "deny_time");
-		allow_time_obj = json_object_object_get(req_obj, "allow_time");
-		start_time_obj = json_object_object_get(req_obj, "start_time");
-		end_time_obj = json_object_object_get(req_obj, "end_time");
-		if (!deny_time_obj || !allow_time_obj || !start_time_obj || !end_time_obj) {
-			printf("deny_time_obj or allow_time_obj or start_time_obj or end_time_obj is NULL\n");
-			json_object_put(req_obj);
-			free(msg_obj_str);
-			return 0;
-		}
-	} else if (mode == 2) {
-		daily_time_list_obj = json_object_object_get(req_obj, "daily_time_list");
-		if (!daily_time_list_obj || json_object_array_length(daily_time_list_obj) != 7) {
-			printf("daily_time_list_obj is NULL or length != 7\n");
-			json_object_put(req_obj);
-			free(msg_obj_str);
-			return 0;
-		}
-	}
 	struct uci_context *uci_ctx = uci_alloc_context();
 	if (!uci_ctx) {
 		printf("Failed to allocate UCI context\n");
@@ -1351,8 +1325,10 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 		free(msg_obj_str);
 		return 0;
 	}
+	mode = json_object_get_int(mode_obj);
 	af_uci_set_int_value(uci_ctx, "appfilter.time.time_mode", mode);
 
+	struct json_object *weekday_list_obj = json_object_object_get(req_obj, "weekday_list");
 	if (weekday_list_obj && (mode == 0 || mode == 1) && json_object_array_length(weekday_list_obj) > 0) {
 		char days_str[128] = {0};
 
@@ -1369,6 +1345,12 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 	}
 
 	if (mode == 0) {
+		struct json_object *time_list_obj = json_object_object_get(req_obj, "time_list");
+
+		if (!time_list_obj) {
+			printf("time_list_obj is NULL\n");
+			goto EXIT;
+		}
 		af_uci_delete(uci_ctx, "appfilter.time.time");
 		int time_list_len = json_object_array_length(time_list_obj);
 		if (time_list_len > MAX_TIME_LIST) {
@@ -1380,6 +1362,11 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 			struct json_object *start_time_obj = json_object_object_get(time_obj, "start");
 			struct json_object *end_time_obj = json_object_object_get(time_obj, "end");
 			char time_str[256] = {0};
+
+			if (!start_time_obj || !end_time_obj) {
+				printf("start_time_obj or end_time_obj is NULL\n");
+				goto EXIT;
+			}
 
 			struct json_object *period_weekday_list_obj =
 				json_object_object_get(time_obj, "weekday_list");
@@ -1414,6 +1401,14 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 			af_uci_add_list(uci_ctx, "appfilter.time.time", time_str);
 		}
 	} else if (mode == 1) {
+		struct json_object *deny_time_obj = json_object_object_get(req_obj, "deny_time");
+		struct json_object *allow_time_obj = json_object_object_get(req_obj, "allow_time");
+		struct json_object *start_time_obj = json_object_object_get(req_obj, "start_time");
+		struct json_object *end_time_obj = json_object_object_get(req_obj, "end_time");
+		if (!deny_time_obj || !allow_time_obj || !start_time_obj || !end_time_obj) {
+			printf("deny_time_obj or allow_time_obj or start_time_obj or end_time_obj is NULL\n");
+			goto EXIT;
+		}
 		af_uci_set_int_value(uci_ctx, "appfilter.time.deny_time",
 				     json_object_get_int(deny_time_obj));
 		af_uci_set_int_value(uci_ctx, "appfilter.time.allow_time",
@@ -1423,6 +1418,21 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 		af_uci_set_value(uci_ctx, "appfilter.time.end_time",
 				 (char *)json_object_get_string(end_time_obj));
 	} else if (mode == 2) {
+		struct json_object *daily_time_list_obj =
+			json_object_object_get(req_obj, "daily_time_list");
+
+		if (!daily_time_list_obj) {
+			printf("daily_time_list_obj is NULL\n");
+			goto EXIT;
+		}
+
+		int daily_time_list_len = json_object_array_length(daily_time_list_obj);
+		if (daily_time_list_len != 7) {
+			printf("daily_time_list length should be 7, got %d\n",
+			       daily_time_list_len);
+			goto EXIT;
+		}
+
 		for (int i = 0; i < 7; i++) {
 			char uci_key[64] = {0};
 			snprintf(uci_key, sizeof(uci_key),
@@ -1495,7 +1505,7 @@ static int handle_set_app_filter_time(struct ubus_context *ctx, struct ubus_obje
 	g_oaf_config_change = 1;
 	if (g_enable_agent)
 		af_forward_msg_to_agent("set_app_filter_time", msg_obj_str, strlen(msg_obj_str));
-	
+EXIT:
 	uci_free_context(uci_ctx);
 	json_object_put(req_obj);
 	free(msg_obj_str);
@@ -1639,6 +1649,14 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 	int page = 0;
 	int page_size = 20; /* Default page size */
 
+	struct uci_context *uci_ctx = uci_alloc_context();
+	if (!uci_ctx) {
+		printf("Failed to allocate UCI context\n");
+		json_object_put(response);
+		json_object_put(data_obj);
+		return 0;
+	}
+
 	char *msg_obj_str = blobmsg_format_json(msg, true);
 	struct json_object *req_obj = NULL;
 	if (msg_obj_str) {
@@ -1685,6 +1703,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 			struct json_object *user_obj =
 				json_object_array_get_idx(au_info.users_array, i);
 			if (user_obj) {
+				json_object_get(user_obj);
 				json_object_array_add(paged_array, user_obj);
 			}
 		}
@@ -1708,6 +1727,7 @@ static int handle_get_all_users(struct ubus_context *ctx, struct ubus_object *ob
 		json_object_put(req_obj);
 	if (msg_obj_str)
 		free(msg_obj_str);
+	uci_free_context(uci_ctx);
 
 	struct blob_buf b = {};
 	blob_buf_init(&b, 0);
@@ -2524,6 +2544,7 @@ static struct ubus_method appfilter_object_methods[] = {
 	UBUS_METHOD("add_app_filter_user", handle_add_app_filter_user, empty_policy),
 	UBUS_METHOD("set_nickname", handle_set_nickname, empty_policy),
 	UBUS_METHOD("get_oaf_status", handle_get_oaf_status, empty_policy),
+	UBUS_METHOD("debug", handle_debug, empty_policy),
 	UBUS_METHOD("get_whitelist_user", handle_get_whitelist_user, empty_policy),
 	UBUS_METHOD("add_whitelist_user", handle_add_whitelist_user, empty_policy),
 	UBUS_METHOD("del_whitelist_user", handle_del_whitelist_user, empty_policy),
