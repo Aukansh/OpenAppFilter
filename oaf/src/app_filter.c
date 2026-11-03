@@ -92,7 +92,7 @@ static int __add_app_feature(char *feature, int appid, char *name, int proto, in
 	af_feature_node_t *node = NULL;
 	char *p = dict;
 	char *begin = dict;
-	char pos[64] = {0};
+	char pos[128] = {0};
 	int index = 0;
 	int value = 0;
 
@@ -561,15 +561,6 @@ static unsigned char *read_skb(struct sk_buff *skb, unsigned int from, unsigned 
 	struct skb_seq_state state;
 	unsigned char *msg_buf = NULL;
 	unsigned int consumed = 0;
-#if 0
-	if (from <= 0 || from > 1500) {
-		return NULL;
-	}
-
-	if (len <= 0 || from+len > 1500) {
-		return NULL;
-	}
-#endif
 
 	msg_buf = kmalloc(len, GFP_ATOMIC);
 	if (!msg_buf) {
@@ -1125,17 +1116,6 @@ static void af_update_client_app_info_by_mac(u_int8_t *mac, int app_id, int drop
 
 int af_send_msg_to_user(char *pbuf, uint16_t len);
 
-static __maybe_unused int af_match_bcast_packet(flow_info_t *f)
-{
-	if (!f) {
-		return 0;
-	}
-	if (0 == f->src || 0 == f->dst || 0xffffffff == f->dst || 0 == f->dst) {
-		return 1;
-	}
-	return 0;
-}
-
 static int af_match_local_packet(flow_info_t *f)
 {
 	if (!f) {
@@ -1159,7 +1139,7 @@ static int update_url_visiting_info(af_client_info_t *client, flow_info_t *flow)
 	if (flow->https.match) {
 		host = flow->https.url_pos;
 		len = flow->https.url_len;
-	} else if (flow->http.match) {
+	} else if (flow->http.match && flow->http.host_pos) {
 		host = flow->http.host_pos;
 		len = flow->http.host_len;
 	}
@@ -1551,11 +1531,6 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 			}
 
 			if (g_oaf_record_enable && !flow.ignore) {
-				/* Record every packet: af_update_client_app_info
-				 * relies on total_num to decide the visit record's
-				 * expiry window (see flush_expired_visit_info).
-				 * Skipping the update would make active flows look
-				 * idle and get purged prematurely. */
 				af_update_client_app_info_by_mac(client_mac, app_id, ct_action);
 			}
 
@@ -1945,7 +1920,7 @@ int af_send_msg_to_user(char *pbuf, uint16_t len)
 	}
 
 	hdr = (struct af_msg_hdr *)msg_buf;
-	hdr->magic = 0xa0b0c0d0;
+	hdr->magic = AF_NL_MSG_MAGIC;
 	hdr->len = len;
 	p_data = msg_buf + sizeof(struct af_msg_hdr);
 	memcpy(p_data, pbuf, len);
@@ -2007,7 +1982,7 @@ static void oaf_msg_rcv(struct sk_buff *skb)
 		return;
 	}
 
-	if (af_hdr->magic != 0xa0b0c0d0) {
+	if (af_hdr->magic != AF_NL_MSG_MAGIC) {
 		return;
 	}
 	udata = umsg + sizeof(struct af_msg_hdr);

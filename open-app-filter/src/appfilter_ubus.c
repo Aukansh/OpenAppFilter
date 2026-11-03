@@ -1004,7 +1004,7 @@ static int handle_set_app_filter_base(struct ubus_context *ctx,
 				      const char *method,
 				      struct blob_attr *msg)
 {
-	struct json_object *req_obj, *obj;
+	struct json_object *req_obj, *jval;
 	struct uci_context *uci_ctx;
 	char *s = blobmsg_format_json(msg, true);
 
@@ -1018,8 +1018,8 @@ static int handle_set_app_filter_base(struct ubus_context *ctx,
 		return 0;
 	}
 
-	obj = json_object_object_get(req_obj, "enable");
-	if (!obj || !json_object_object_get(req_obj, "work_mode")) {
+	jval = json_object_object_get(req_obj, "enable");
+	if (!jval || !json_object_object_get(req_obj, "work_mode")) {
 		printf("enable_obj or work_mode_obj is NULL\n");
 		json_object_put(req_obj);
 		free(s);
@@ -1035,22 +1035,22 @@ static int handle_set_app_filter_base(struct ubus_context *ctx,
 	}
 
 	af_uci_set_int_value(uci_ctx, "appfilter.global.enable",
-			     json_object_get_int(obj));
+			     json_object_get_int(jval));
 	af_uci_set_int_value(uci_ctx, "appfilter.global.work_mode",
 			     json_object_get_int(json_object_object_get(req_obj, "work_mode")));
 
-	if ((obj = json_object_object_get(req_obj, "record_enable")))
+	if ((jval = json_object_object_get(req_obj, "record_enable")))
 		af_uci_set_int_value(uci_ctx, "appfilter.global.record_enable",
-				     json_object_get_int(obj));
-	if ((obj = json_object_object_get(req_obj, "disable_quic")))
+				     json_object_get_int(jval));
+	if ((jval = json_object_object_get(req_obj, "disable_quic")))
 		af_uci_set_int_value(uci_ctx, "appfilter.global.disable_quic",
-				     json_object_get_int(obj));
-	if ((obj = json_object_object_get(req_obj, "app_filter_mode")))
+				     json_object_get_int(jval));
+	if ((jval = json_object_object_get(req_obj, "app_filter_mode")))
 		af_uci_set_int_value(uci_ctx, "appfilter.global.app_filter_mode",
-				     json_object_get_int(obj));
-	if ((obj = json_object_object_get(req_obj, "daily_limit_mode")))
+				     json_object_get_int(jval));
+	if ((jval = json_object_object_get(req_obj, "daily_limit_mode")))
 		af_uci_set_int_value(uci_ctx, "appfilter.global.daily_limit_mode",
-				     json_object_get_int(obj));
+				     json_object_get_int(jval));
 
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
@@ -1114,7 +1114,7 @@ static int handle_set_app_filter_adv(struct ubus_context *ctx,
 				     const char *method,
 				     struct blob_attr *msg)
 {
-	struct json_object *req_obj, *obj;
+	struct json_object *req_obj, *jval;
 	struct uci_context *uci_ctx;
 	char *s = blobmsg_format_json(msg, true);
 
@@ -1136,19 +1136,19 @@ static int handle_set_app_filter_adv(struct ubus_context *ctx,
 		return 0;
 	}
 
-	if ((obj = json_object_object_get(req_obj, "tcp_rst")))
+	if ((jval = json_object_object_get(req_obj, "tcp_rst")))
 		af_uci_set_int_value(uci_ctx, "appfilter.global.tcp_rst",
-				     json_object_get_int(obj));
-	if ((obj = json_object_object_get(req_obj, "lan_ifname")))
+				     json_object_get_int(jval));
+	if ((jval = json_object_object_get(req_obj, "lan_ifname")))
 		af_uci_set_value(uci_ctx, "appfilter.global.lan_ifname",
-				 (char *)json_object_get_string(obj));
-	if ((obj = json_object_object_get(req_obj, "disable_hnat")))
+				 (char *)json_object_get_string(jval));
+	if ((jval = json_object_object_get(req_obj, "disable_hnat")))
 		af_uci_set_int_value(uci_ctx, "appfilter.global.disable_hnat",
-				     json_object_get_int(obj));
-	if ((obj = json_object_object_get(req_obj, "auto_load_engine"))) {
+				     json_object_get_int(jval));
+	if ((jval = json_object_object_get(req_obj, "auto_load_engine"))) {
 		af_uci_set_int_value(uci_ctx, "appfilter.global.auto_load_engine",
-				     json_object_get_int(obj));
-		if (json_object_get_int(obj) == 0)
+				     json_object_get_int(jval));
+		if (json_object_get_int(jval) == 0)
 			system("rm /etc/modules.d/oaf");
 	}
 

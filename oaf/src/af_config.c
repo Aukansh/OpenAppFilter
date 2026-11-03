@@ -61,19 +61,6 @@ static af_config_handler_t af_find_handler(enum AF_CONFIG_CMD cmd)
 	return NULL;
 }
 
-/*
-add:
-{
-	"op":1,
-	"data":{
-		"apps":[]
-	}
-}
-clean
-{
-	"op":3,
-}
-*/
 static int af_config_handle(char *config, unsigned int len)
 {
 	cJSON *config_obj = NULL;
@@ -176,11 +163,11 @@ static ssize_t af_cdev_write(struct file *filp, const char *buffer, size_t count
 }
 
 static struct file_operations af_cdev_ops = {
-	owner : THIS_MODULE,
-	release : af_cdev_release,
-	open : af_cdev_open,
-	write : af_cdev_write,
-	read : af_cdev_read,
+	.owner = THIS_MODULE,
+	.release = af_cdev_release,
+	.open = af_cdev_open,
+	.write = af_cdev_write,
+	.read = af_cdev_read,
 };
 
 int af_register_dev(void)
