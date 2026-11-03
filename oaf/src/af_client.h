@@ -15,13 +15,6 @@ extern u32 nfc_debug_level;
 #define AF_CLIENT_LOCK_W() write_lock_bh(&af_client_lock);
 #define AF_CLIENT_UNLOCK_W() write_unlock_bh(&af_client_lock);
 
-#define NIPQUAD(addr)                \
-	((unsigned char *)&addr)[0],     \
-		((unsigned char *)&addr)[1], \
-		((unsigned char *)&addr)[2], \
-		((unsigned char *)&addr)[3]
-#define NIPQUAD_FMT "%u.%u.%u.%u"
-
 enum NFC_PKT_DIR
 {
 	PKT_DIR_DOWN,
@@ -48,6 +41,7 @@ typedef struct flow_rate
 	unsigned int pkt_up_rate;
 	unsigned int pkt_down_rate;
 }flow_rate_t;
+
 typedef struct app_visit_info
 {
 	unsigned int app_id;
