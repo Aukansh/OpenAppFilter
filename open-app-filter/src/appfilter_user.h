@@ -20,45 +20,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef __FILTER_USER_H__
-#define __FILTER_USER_H__
+/* SPDX-License-Identifier: MIT */
+#ifndef _APPFILTER_USER_H
+#define _APPFILTER_USER_H
+
 #include <sys/types.h>
-#define MAX_IP_LEN 32
-#define MAX_MAC_LEN 32
-#define MAX_VISIT_HASH_SIZE 64
-#define MAX_DEV_NODE_HASH_SIZE 64
-#define MAX_HOSTNAME_SIZE 64
-#define OAF_VISIT_LIST_FILE "/tmp/visit_list"
-#define OAF_DEV_LIST_FILE "/tmp/dev_list"
-#define OAF_USER_FILE "/etc/user_list.dat"
-#define MIN_VISIT_TIME 5 // default 5s
-#define MAX_APP_STAT_NUM 8
-#define MAX_VISITLIST_DUMP_NUM 16
-#define MAX_APP_TYPE 32
-#define MAX_APP_ID_NUM 512
-#define MAX_SUPPORT_DEV_NUM 256
-#define SECONDS_PER_DAY (24 * 3600)
-#define MAX_NICKNAME_SIZE 64
-#define MAX_REPORT_URL_LEN 64
 
+#define MAX_IP_LEN		32
+#define MAX_MAC_LEN		32
+#define MAX_VISIT_HASH_SIZE	64
+#define MAX_DEV_NODE_HASH_SIZE	64
+#define MAX_HOSTNAME_SIZE	64
+#define MAX_NICKNAME_SIZE	64
+#define MAX_REPORT_URL_LEN	64
+#define MAX_APP_STAT_NUM	8
+#define MAX_APP_TYPE		32
+#define MAX_APP_ID_NUM		512
+#define SECONDS_PER_DAY		(24 * 3600)
 
-typedef struct visit_info
-{
+#define OAF_VISIT_LIST_FILE	"/tmp/visit_list"
+#define OAF_DEV_LIST_FILE	"/tmp/dev_list"
+#define OAF_USER_FILE		"/etc/user_list.dat"
+
+typedef struct visit_info {
 	int appid;
 	u_int32_t first_time;
 	u_int32_t latest_time;
 	int action;
-	int expire; 
+	int expire;
 	struct visit_info *next;
 } visit_info_t;
 
-typedef struct visit_stat
-{
+typedef struct visit_stat {
 	u_int32_t total_time;
 } visit_stat_t;
 
-typedef struct dev_node
-{
+typedef struct dev_node {
 	char mac[MAX_MAC_LEN];
 	char ip[MAX_IP_LEN];
 	char ipv6[64];
@@ -69,7 +66,7 @@ typedef struct dev_node
 	u_int32_t offline_time;
 	u_int32_t online_time;
 	visit_info_t *visit_htable[MAX_VISIT_HASH_SIZE];
-	visit_stat_t stat[MAX_APP_TYPE][MAX_APP_ID_NUM]; // todo: list
+	visit_stat_t stat[MAX_APP_TYPE][MAX_APP_ID_NUM];
 	char visiting_url[MAX_REPORT_URL_LEN];
 	int visiting_app;
 	int is_whitelist;
@@ -77,48 +74,39 @@ typedef struct dev_node
 	u_int32_t down_rate;
 	u_int64_t today_up_bytes;
 	u_int64_t today_down_bytes;
-	u_int64_t last_up_bytes;    /* previous sample of today_up_bytes */
-	u_int64_t last_down_bytes;  /* previous sample of today_down_bytes */
+	u_int64_t last_up_bytes;
+	u_int64_t last_down_bytes;
 	int active;
 	u_int32_t today_am_active_time;
 	u_int32_t today_pm_active_time;
-	int is_selected; 
+	int is_selected;
 	int blocked;
-	int is_af_user;
-	int time_mode;              
-	char time_start[16];
-	char time_end[16];
 	struct dev_node *next;
 } dev_node_t;
 
-struct app_visit_info
-{
+struct app_visit_info {
 	int app_id;
 	char app_name[32];
 	int total_time;
 };
 
-struct app_visit_stat_info
-{
+struct app_visit_stat_info {
 	int num;
 	struct app_visit_info visit_list[MAX_APP_STAT_NUM];
 };
+
 typedef void (*iter_func)(void *arg, dev_node_t *dev);
-//todo:dev for each
+
 extern dev_node_t *dev_hash_table[MAX_DEV_NODE_HASH_SIZE];
 
 dev_node_t *add_dev_node(char *mac);
-void init_dev_node_htable();
-void dump_dev_list(void);
-void dump_dev_visit_list(void);
+void init_dev_node_htable(void);
 dev_node_t *find_dev_node(char *mac);
 void dev_foreach(void *arg, iter_func iter);
-void add_visit_info_node(visit_info_t **head, visit_info_t *node);
 void check_dev_visit_info_expire(void);
-void flush_expire_visit_info();
+void flush_expire_visit_info(void);
 int check_dev_expire(void);
 void flush_dev_expire_node(void);
-void flush_expire_visit_info(void);
 void flush_offline_users(void);
 void save_user_time_to_file(void);
 void load_user_time_from_file(void);
@@ -126,18 +114,15 @@ void update_dev_list(void);
 void update_dev_nickname(void);
 void update_dev_visiting_info(void);
 void update_dev_whitelist_flag(void);
-void update_dev_selected_flag(void); 
+void update_dev_selected_flag(void);
 void clean_invalid_app_records(void);
-
 void clear_device_app_statistics(void);
-
 void reset_all_users_today_active_time(void);
 void reset_user_today_active_time(const char *mac);
 void reset_all_users_today_flow(void);
-
 void check_all_users_period_time(void);
 void update_dev_online_status(void);
 void mac_copy_lower(char *dst, const char *src, size_t dst_len);
-void check_user_time_rule_realtime(void);
+void dump_dev_list(void);
 
 #endif
