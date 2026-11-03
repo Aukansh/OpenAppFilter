@@ -723,7 +723,6 @@ void sync_selected_macs_to_kernel(void)
 	if (strcmp(buf, last_json) == 0)
 		return;
 
-	system("conntrack -F >/dev/null 2>&1");
 	FILE *fp = fopen("/dev/appfilter", "w");
 	if (fp) {
 		fwrite(buf, 1, strlen(buf), fp);
