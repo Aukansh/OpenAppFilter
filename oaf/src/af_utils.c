@@ -68,18 +68,6 @@ char *k_trim(char *s)
 	return s;
 }
 
-int check_local_network_ip(unsigned int ip)
-{
-	if ((ip & 0xffff0000) == 0xc0a80000)
-		return 1;
-	else if ((ip & 0xfff00000) == 0xac100000)
-		return 1;
-	else if ((ip & 0xff000000) == 0x0a000000)
-		return 1;
-	else
-		return 0;
-}
-
 void dump_str(char *name, unsigned char *p, int len)
 {
 	char buf[MAX_DUMP_STR_LEN] = {0};
@@ -90,80 +78,10 @@ void dump_str(char *name, unsigned char *p, int len)
 	strncpy(buf, p, len);
 	printk("[%s]\n", buf);
 }
-static int isprint_char(unsigned char c)
-{
-	if (c >= 0x20 && c <= 0x7e) {
-		return 1;
-	} else {
-		return 0;
-	}
-}
-
-void print_hex_ascii(const unsigned char *data, size_t size)
-{
-	size_t i, j;
-
-	for (i = 0; i < size; i += 16) {
-		printk(KERN_CONT"%08lx  ", (unsigned long)i);
-		for (j = 0; j < 16; ++j) {
-			if (i + j < size) {
-				printk(KERN_CONT"%02x ", data[i + j]);
-			} else {
-				printk(KERN_CONT"   "); 
-			}
-		}
-
-		printk(KERN_CONT" ");
-		for (j = 0; j < 16; ++j) {
-			if (i + j < size) {
-				unsigned char c = data[i + j]; 
-				printk(KERN_CONT"%c", isprint_char(c) ? c : '.'); 
-			}
-		}
-
-		printk(KERN_CONT"\n");
-	}
-	printk(KERN_CONT"---------------------------------------\n");
-}
-
-
-void dump_hex(char *name, unsigned char *p, int len)
-{
-	int i;
-	if (len > MAX_DUMP_STR_LEN) {
-		len = MAX_DUMP_STR_LEN - 1;
-	}
-	printk("%s: ",name);
-	for (i = 0; i < len; i++) {
-		if (i % 16 == 0)
-			printk(KERN_CONT "\n");
-		printk(KERN_CONT "%02X ",*(p + i));
-	}
-	printk(KERN_CONT "\n");
-}
-
-#ifndef va_arg
-typedef signed int acpi_native_int;
-#ifndef _VALIST
-#define _VALIST
-typedef char *va_list;
-#endif	
-
-#define  _AUPBND                (sizeof (acpi_native_int) - 1)
-#define  _ADNBND                (sizeof (acpi_native_int) - 1)
-
-
-#define _bnd(X, bnd)            (((sizeof (X)) + (bnd)) & (~(bnd)))
-#define va_arg(ap, T)           (*(T *)(((ap) += (_bnd (T, _AUPBND))) - (_bnd (T,_ADNBND))))
-#define va_end(ap)              (void) 0
-#define va_start(ap, A)         (void) ((ap) = (((char *) &(A)) + (_bnd (A,_AUPBND))))
-
-#endif			
 
 #ifndef TOLOWER
 #define TOLOWER(x) ((x) | 0x20)
 #endif
-
 
 static long long k_simple_strtoll(const char *cp, char **endp, unsigned int base)
 {
@@ -187,6 +105,7 @@ char *skip_spaces(const char *str)
 		++str;
 	return (char *)str;
 }
+
 static int k_vsscanf(const char *buf, const char *fmt, va_list args)
 {
 	const char *str = buf;
