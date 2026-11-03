@@ -421,8 +421,6 @@ void af_load_config(af_config_t *config)
 	af_load_global_config(&config->global);
 	if (1 == af_load_time_config(&config->time))
 		apply_time_config_to_uci(&config->time);
-
-	load_dev_time_rules_from_uci();
 }
 
 void update_oaf_proc_value(char *key, char *value)
@@ -640,6 +638,55 @@ void sync_blocked_macs_to_kernel(void)
 		fwrite(buf, 1, strlen(buf), fp);
 		fclose(fp);
 		LOG_INFO("sync blocked macs to kernel: %s\n", buf);
+	} else {
+		LOG_ERROR("open /dev/appfilter failed\n");
+	}
+	strncpy(last_json, buf, sizeof(last_json) - 1);
+	last_json[sizeof(last_json) - 1] = '\0';
+}
+
+static void sync_selected_macs_to_kernel(void)
+{
+	static char last_json[4096] = {0};
+	char buf[4096] = {0};
+	int pos = 0;
+	int first = 1;
+	int ret;
+
+	ret = snprintf(buf + pos, sizeof(buf) - pos,
+		       "{\"op\":%d,\"data\":{\"mac_list\":[",
+		       AF_CMD_SET_MAC_LIST); // op=4
+	if (ret < 0 || ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			if (node->is_selected) {
+				ret = snprintf(buf + pos, sizeof(buf) - pos,
+					       first ? "\"%s\"" : ",\"%s\"",
+					       node->mac);
+				if (ret < 0 || pos + ret >= (int)sizeof(buf)) return;
+				pos += ret;
+				first = 0;
+			}
+			node = node->next;
+		}
+	}
+	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	if (ret < 0 || pos + ret >= (int)sizeof(buf)) return;
+	pos += ret;
+
+	if (strcmp(buf, last_json) == 0)
+		return;
+
+	system("conntrack -F >/dev/null 2>&1");
+	FILE *fp = fopen("/dev/appfilter", "w");
+	if (fp) {
+		fwrite(buf, 1, strlen(buf), fp);
+		fclose(fp);
+		LOG_INFO("sync selected macs to kernel: %s\n", buf);
 	} else {
 		LOG_ERROR("open /dev/appfilter failed\n");
 	}
@@ -1026,11 +1073,10 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 
 	if (count % 10 == 0) {
 		update_dev_list();
+		sync_selected_macs_to_kernel();
 		update_oaf_status();
 		check_all_users_period_time();
 	}
-	update_time_exempt_macs();
-
 	if (count % 60 == 0) {
 		LOG_DEBUG("begin check dev count = %d\n", count);
 		check_dev_visit_info_expire();
@@ -1051,6 +1097,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_lan_ip();
 		af_load_config(&g_af_config);
 		update_dev_selected_flag();
+		sync_selected_macs_to_kernel();
 		update_dynamic_used_time(&g_af_config.time);
 		update_oaf_status();
 		update_oaf_record_status();
@@ -1124,7 +1171,6 @@ int main(int argc, char **argv)
 	signal(SIGUSR2, handle_sigusr2);
 	signal(SIGCHLD, SIG_IGN);
 	init_dev_node_htable();
-	dev_time_rule_init();
 
 	load_user_time_from_file();
 	check_all_users_period_time();
