@@ -9,22 +9,19 @@
 #define MAX_DPI_PKT_NUM 256
 #define MIN_HTTP_DATA_LEN 16
 #define MAX_APP_NAME_LEN 64
-#define MAX_FEATURE_NUM_PER_APP 16 
 #define MIN_FEATURE_STR_LEN 8
 #define MAX_FEATURE_STR_LEN 128
 #define MAX_HOST_URL_LEN 128
 #define MAX_REQUEST_URL_LEN 128
-#define MAX_FEATURE_BITS 16
 #define MAX_POS_INFO_PER_FEATURE 16
 #define MAX_FEATURE_LINE_LEN 600
 #define MIN_FEATURE_LINE_LEN 16
 #define MAX_URL_MATCH_LEN 64
-#define MAX_BYPASS_DPI_PKT_LEN 600
 #define MAX_AF_MAC_HASH_SIZE 64
 
 #define HTTP_GET_METHOD_STR "GET"
 #define HTTP_POST_METHOD_STR "POST"
-#define HTTP_HEADER "HTTP"
+
 #define NIPQUAD(addr) \
 	((unsigned char *)&addr)[0], \
 	((unsigned char *)&addr)[1], \
@@ -59,6 +56,7 @@ enum AF_FEATURE_PARAM_INDEX{
 
 #define OAF_NETLINK_ID 29
 #define MAX_OAF_NL_MSG_LEN 1024
+#define AF_NL_MSG_MAGIC 0xa0b0c0d0
 
 enum E_MSG_TYPE{
 	AF_MSG_INIT,
