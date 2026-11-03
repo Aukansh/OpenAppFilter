@@ -20,114 +20,106 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdarg.h>
+// SPDX-License-Identifier: MIT
 #include <pthread.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include "appfilter_config.h"
-#include "appfilter.h"
+
 #include <uci.h>
 
-#define AF_LOG_FILE_MAX_SIZE (2 * 1024 * 1024)
+#include "appfilter.h"
+#include "appfilter_config.h"
 
-app_name_info_t app_name_table[MAX_SUPPORT_APP_NUM];
-int g_app_count = 0;
-int g_cur_class_num = 0;
+#define AF_LOG_FILE_MAX_SIZE	(2 * 1024 * 1024)
+
+static app_name_info_t app_name_table[MAX_SUPPORT_APP_NUM];
+static int g_app_count;
+int g_cur_class_num;
 char CLASS_NAME_TABLE[MAX_APP_TYPE][MAX_CLASS_NAME_LEN];
 
-static struct uci_context *uci_ctx = NULL;
-static struct uci_package *uci_appfilter;
-
 static pthread_mutex_t af_log_mutex = PTHREAD_MUTEX_INITIALIZER;
-static FILE *af_log_fp = NULL;
+static FILE *af_log_fp;
 
-void af_log(LogLevel level, const char *format, ...)
+static const char *log_level_str(log_level_t level)
 {
-	time_t now;
-	struct tm *t;
+	switch (level) {
+	case LOG_LEVEL_DEBUG:	return "DEBUG";
+	case LOG_LEVEL_INFO:	return "INFO";
+	case LOG_LEVEL_WARN:	return "WARN";
+	case LOG_LEVEL_ERROR:	return "ERROR";
+	default:		return "UNKNOWN";
+	}
+}
+
+void af_log(log_level_t level, const char *fmt, ...)
+{
 	char time_str[20];
-	const char *level_str;
-	va_list args;
+	struct tm *tm;
+	time_t now;
+	va_list ap;
+	long size;
 
 	if (level > current_log_level)
 		return;
 
 	pthread_mutex_lock(&af_log_mutex);
+
 	if (!af_log_fp) {
 		af_log_fp = fopen(LOG_FILE_PATH, "a");
 		if (!af_log_fp) {
 			perror("Failed to open log file");
-			pthread_mutex_unlock(&af_log_mutex);
-			return;
+			goto unlock;
 		}
 	}
 
 	fseek(af_log_fp, 0, SEEK_END);
-	long file_size = ftell(af_log_fp);
-
-	if (file_size > AF_LOG_FILE_MAX_SIZE) {
+	size = ftell(af_log_fp);
+	if (size > AF_LOG_FILE_MAX_SIZE) {
 		fclose(af_log_fp);
 		af_log_fp = NULL;
 		rename(LOG_FILE_PATH, LOG_FILE_PATH ".1");
 		af_log_fp = fopen(LOG_FILE_PATH, "a");
 		if (!af_log_fp) {
 			perror("Failed to open log file after rotate");
-			pthread_mutex_unlock(&af_log_mutex);
-			return;
+			goto unlock;
 		}
 	}
 
 	now = time(NULL);
-	t = localtime(&now);
-	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);
+	tm = localtime(&now);
+	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm);
 
-	switch (level) {
-	case LOG_LEVEL_DEBUG:
-		level_str = "DEBUG";
-		break;
-	case LOG_LEVEL_INFO:
-		level_str = "INFO";
-		break;
-	case LOG_LEVEL_WARN:
-		level_str = "WARN";
-		break;
-	case LOG_LEVEL_ERROR:
-		level_str = "ERROR";
-		break;
-	default:
-		level_str = "UNKNOWN";
-		break;
-	}
+	fprintf(af_log_fp, "[%s] [%s] ", time_str, log_level_str(level));
+	va_start(ap, fmt);
+	vfprintf(af_log_fp, fmt, ap);
+	va_end(ap);
 
-	fprintf(af_log_fp, "[%s] [%s] ", time_str, level_str);
-
-	va_start(args, format);
-	vfprintf(af_log_fp, format, args);
-	va_end(args);
-
-	size_t fmt_len = strlen(format);
-	if (fmt_len == 0 || format[fmt_len - 1] != '\n') {
+	if (!fmt[0] || fmt[strlen(fmt) - 1] != '\n')
 		fputc('\n', af_log_fp);
-	}
 
 	fflush(af_log_fp);
+unlock:
 	pthread_mutex_unlock(&af_log_mutex);
 }
 
-int af_uci_get_int_value(struct uci_context *ctx, char *key)
+/* ----------------------------------------------------------------------
+ * UCI helpers
+ * -------------------------------------------------------------------- */
+
+int af_uci_get_int_value(struct uci_context *ctx, const char *key)
 {
-	int ret = -1;
-	char param_tmp[128] = {0};
-
-	if (!key || strlen(key) >= sizeof(param_tmp)) {
-		return ret;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
-
+	char buf[128];
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK)
+	int ret = -1;
+
+	if (!key || strlen(key) >= sizeof(buf))
+		return ret;
+
+	snprintf(buf, sizeof(buf), "%s", key);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
 		return ret;
 
 	if (!(ptr.flags & UCI_LOOKUP_COMPLETE)) {
@@ -135,14 +127,13 @@ int af_uci_get_int_value(struct uci_context *ctx, char *key)
 		goto done;
 	}
 
-	struct uci_element *e = ptr.last;
-	switch (e->type) {
+	switch (ptr.last->type) {
 	case UCI_TYPE_SECTION:
 		ret = -1;
-		goto done;
+		break;
 	case UCI_TYPE_OPTION:
 		ret = atoi(ptr.o->v.string);
-		goto done;
+		break;
 	default:
 		break;
 	}
@@ -152,21 +143,19 @@ done:
 	return ret;
 }
 
-int af_uci_get_value(struct uci_context *ctx, char *key, char *output, int out_len)
+int af_uci_get_value(struct uci_context *ctx, const char *key,
+		     char *out, int out_len)
 {
-	int ret = UCI_OK;
-	char param_tmp[128] = {0};
-
-	if (!key || !output || out_len <= 0 || strlen(key) >= sizeof(param_tmp)) {
-		return 1;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
-
+	char buf[128];
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
-		ret = 1;
-		return ret;
-	}
+	int ret = UCI_OK;
+
+	if (!key || !out || out_len <= 0 || strlen(key) >= sizeof(buf))
+		return 1;
+
+	snprintf(buf, sizeof(buf), "%s", key);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
+		return 1;
 
 	if (!(ptr.flags & UCI_LOOKUP_COMPLETE)) {
 		ctx->err = UCI_ERR_NOTFOUND;
@@ -174,13 +163,12 @@ int af_uci_get_value(struct uci_context *ctx, char *key, char *output, int out_l
 		goto done;
 	}
 
-	struct uci_element *e = ptr.last;
-	switch (e->type) {
+	switch (ptr.last->type) {
 	case UCI_TYPE_SECTION:
-		snprintf(output, out_len, "%s", ptr.s->type);
+		snprintf(out, out_len, "%s", ptr.s->type);
 		break;
 	case UCI_TYPE_OPTION:
-		snprintf(output, out_len, "%s", ptr.o->v.string);
+		snprintf(out, out_len, "%s", ptr.o->v.string);
 		break;
 	default:
 		ret = 1;
@@ -192,21 +180,19 @@ done:
 	return ret;
 }
 
-int af_uci_delete(struct uci_context *ctx, char *key)
+int af_uci_delete(struct uci_context *ctx, const char *key)
 {
-	int ret = UCI_OK;
-	char param_tmp[128] = {0};
-
-	if (!key || strlen(key) >= sizeof(param_tmp)) {
-		return 1;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
-
+	char buf[128];
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
-		ret = 1;
-		return ret;
-	}
+	int ret;
+
+	if (!key || strlen(key) >= sizeof(buf))
+		return 1;
+
+	snprintf(buf, sizeof(buf), "%s", key);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
+		return 1;
+
 	ret = uci_delete(ctx, &ptr);
 	if (ret == UCI_OK)
 		ret = uci_save(ctx, ptr.p);
@@ -216,23 +202,23 @@ int af_uci_delete(struct uci_context *ctx, char *key)
 	return ret;
 }
 
-int af_uci_add_list(struct uci_context *ctx, char *key, char *value)
+int af_uci_add_list(struct uci_context *ctx, const char *key, const char *value)
 {
-	int ret = UCI_OK;
+	char buf[MAX_PARAM_LIST_LEN];
+	struct uci_ptr ptr;
+	int ret;
 
-	if (strlen(value) + strlen(key) >= MAX_PARAM_LIST_LEN - 1) {
+	if (!key || !value)
+		return -1;
+	if (strlen(key) + strlen(value) >= sizeof(buf) - 1) {
 		printf("value too long\n");
 		return -1;
 	}
 
-	char param_tmp[MAX_PARAM_LIST_LEN] = {0};
-	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
+	snprintf(buf, sizeof(buf), "%s=%s", key, value);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
+		return 1;
 
-	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
-		ret = 1;
-		return ret;
-	}
 	ret = uci_add_list(ctx, &ptr);
 	if (ret == UCI_OK)
 		ret = uci_save(ctx, ptr.p);
@@ -242,18 +228,42 @@ int af_uci_add_list(struct uci_context *ctx, char *key, char *value)
 	return ret;
 }
 
-int af_uci_get_list_value(struct uci_context *ctx, char *key, char *output, int out_len, char *delimt)
+int af_uci_add_int_list(struct uci_context *ctx, const char *key, int value)
 {
-	int ret = -1;
-	char param_tmp[128] = {0};
-
-	if (!key || strlen(key) >= sizeof(param_tmp)) {
-		return ret;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s", key);
-
+	char buf[128];
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK)
+	int ret;
+
+	if (!key || strlen(key) + 16 >= sizeof(buf))
+		return 1;
+
+	snprintf(buf, sizeof(buf), "%s=%d", key, value);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
+		return 1;
+
+	ret = uci_add_list(ctx, &ptr);
+	if (ret == UCI_OK)
+		ret = uci_save(ctx, ptr.p);
+
+	if (ptr.p)
+		uci_unload(ctx, ptr.p);
+	return ret;
+}
+
+int af_uci_get_list_value(struct uci_context *ctx, const char *key,
+			  char *out, int out_len, const char *delim)
+{
+	char buf[128];
+	struct uci_ptr ptr;
+	size_t used = 0, dlen;
+	int sep = 0;
+	int ret = -1;
+
+	if (!key || strlen(key) >= sizeof(buf))
+		return ret;
+
+	snprintf(buf, sizeof(buf), "%s", key);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
 		return ret;
 
 	if (!(ptr.flags & UCI_LOOKUP_COMPLETE)) {
@@ -261,40 +271,31 @@ int af_uci_get_list_value(struct uci_context *ctx, char *key, char *output, int 
 		goto done;
 	}
 
-	int sep = 0;
-	struct uci_element *e = ptr.last;
-	switch (e->type) {
-	case UCI_TYPE_SECTION:
-		ret = -1;
+	if (ptr.last->type != UCI_TYPE_OPTION)
 		goto done;
-	case UCI_TYPE_OPTION:
-		if (UCI_TYPE_LIST == ptr.o->type) {
-			memset(output, 0x0, out_len);
-			size_t used = 0;
-			uci_foreach_element(&ptr.o->v.list, e) {
-				size_t need = strlen(e->name) +
-					      (sep ? strlen(delimt) : 0);
-				if (used + need + 1 > (size_t)out_len) {
-					LOG_WARN("af_uci_get_list_value: "
-						 "output truncated\n");
-					break;
-				}
-				if (sep) {
-					memcpy(output + used, delimt,
-					       strlen(delimt));
-					used += strlen(delimt);
-				}
-				memcpy(output + used, e->name,
-				       strlen(e->name));
-				used += strlen(e->name);
-				output[used] = '\0';
-				sep = 1;
+
+	if (ptr.o->type == UCI_TYPE_LIST) {
+		struct uci_element *e;
+
+		dlen = strlen(delim);
+		memset(out, 0, out_len);
+		uci_foreach_element(&ptr.o->v.list, e) {
+			size_t need = strlen(e->name) + (sep ? dlen : 0);
+
+			if (used + need + 1 > (size_t)out_len) {
+				LOG_WARN("af_uci_get_list_value: output truncated\n");
+				break;
 			}
-			ret = 0;
+			if (sep) {
+				memcpy(out + used, delim, dlen);
+				used += dlen;
+			}
+			memcpy(out + used, e->name, strlen(e->name));
+			used += strlen(e->name);
+			out[used] = '\0';
+			sep = 1;
 		}
-		goto done;
-	default:
-		break;
+		ret = 0;
 	}
 done:
 	if (ptr.p)
@@ -302,83 +303,26 @@ done:
 	return ret;
 }
 
-int af_uci_add_int_list(struct uci_context *ctx, char *key, int value)
+int af_uci_set_value(struct uci_context *ctx, const char *key,
+		     const char *value)
 {
-	int ret = UCI_OK;
-	char param_tmp[128] = {0};
-
-	if (!key || strlen(key) + 16 >= sizeof(param_tmp)) {
-		return 1;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
-
+	char buf[2048];
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
-		ret = 1;
-		return ret;
-	}
-	ret = uci_add_list(ctx, &ptr);
-	if (ret == UCI_OK)
-		ret = uci_save(ctx, ptr.p);
+	int ret;
 
-	if (ptr.p)
-		uci_unload(ctx, ptr.p);
-	return ret;
-}
-
-int af_uci_del_list(struct uci_context *ctx, char *key, char *value)
-{
-	int ret = UCI_OK;
-	char param_tmp[128] = {0};
-
-	if (!key || !value || strlen(key) + strlen(value) + 2 > sizeof(param_tmp)) {
-		return 1;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
-
-	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
-		ret = 1;
-		return ret;
-	}
-	ret = uci_del_list(ctx, &ptr);
-	if (ret == UCI_OK)
-		ret = uci_save(ctx, ptr.p);
-
-	if (ptr.p)
-		uci_unload(ctx, ptr.p);
-	return ret;
-}
-
-int af_uci_set_value(struct uci_context *ctx, char *key, char *value)
-{
-	int ret = UCI_OK;
-	char param_tmp[2048] = {0};
-
-	if (!ctx || !key || !value) {
+	if (!ctx || !key || !value)
 		return -1;
-	}
 
-	/* Reject anything that would not fit; the caller-supplied value comes
-	 * from a JSON payload and its length is not otherwise bounded. */
-	if (strlen(key) + strlen(value) + 2 > sizeof(param_tmp)) {
-		fprintf(stderr, "af_uci_set_value: key+value too long (%zu + %zu)\n",
+	if (strlen(key) + strlen(value) + 2 > sizeof(buf)) {
+		fprintf(stderr, "af_uci_set_value: key+value too long (%zu+%zu)\n",
 			strlen(key), strlen(value));
 		return -1;
 	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
+	snprintf(buf, sizeof(buf), "%s=%s", key, value);
 
-	struct uci_ptr ptr;
-	int lookup_ret = uci_lookup_ptr(ctx, &ptr, param_tmp, true);
-	if (lookup_ret != UCI_OK && lookup_ret != UCI_ERR_NOTFOUND) {
-		ret = 1;
-		return ret;
-	}
-	if (ptr.o == NULL && ptr.s == NULL) {
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
 		return 1;
-	}
 
-	struct uci_element *e = ptr.last;
 	ret = uci_set(ctx, &ptr);
 	if (ret == UCI_OK)
 		ret = uci_save(ctx, ptr.p);
@@ -388,26 +332,19 @@ int af_uci_set_value(struct uci_context *ctx, char *key, char *value)
 	return ret;
 }
 
-int af_uci_set_int_value(struct uci_context *ctx, char *key, int value)
+int af_uci_set_int_value(struct uci_context *ctx, const char *key, int value)
 {
-	int ret = UCI_OK;
-	char param_tmp[128] = {0};
-
-	if (!key || strlen(key) + 16 >= sizeof(param_tmp)) {
-		return 1;
-	}
-	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
-
+	char buf[128];
 	struct uci_ptr ptr;
-	int lookup_ret = uci_lookup_ptr(ctx, &ptr, param_tmp, true);
-	if (lookup_ret != UCI_OK && lookup_ret != UCI_ERR_NOTFOUND) {
-		ret = 1;
-		return ret;
-	}
-	if (ptr.o == NULL && ptr.s == NULL) {
+	int ret;
+
+	if (!key || strlen(key) + 16 >= sizeof(buf))
 		return 1;
-	}
-	struct uci_element *e = ptr.last;
+
+	snprintf(buf, sizeof(buf), "%s=%d", key, value);
+	if (uci_lookup_ptr(ctx, &ptr, buf, true) != UCI_OK)
+		return 1;
+
 	ret = uci_set(ctx, &ptr);
 	if (ret == UCI_OK)
 		ret = uci_save(ctx, ptr.p);
@@ -417,55 +354,57 @@ int af_uci_set_int_value(struct uci_context *ctx, char *key, int value)
 	return ret;
 }
 
-int af_uci_del_array_value(struct uci_context *ctx, char *key_fmt, int index)
+int af_uci_set_array_value(struct uci_context *ctx, const char *fmt,
+			   int index, const char *value)
 {
-	char key[128] = {0};
+	char key[128];
 
-	sprintf(key, key_fmt, index);
-	return af_uci_delete(ctx, key);
-}
-
-int af_uci_set_array_value(struct uci_context *ctx, char *key_fmt, int index, char *value)
-{
-	char key[128] = {0};
-
-	sprintf(key, key_fmt, index);
+	snprintf(key, sizeof(key), fmt, index);
 	return af_uci_set_value(ctx, key, value);
+}
+
+int af_uci_get_array_value(struct uci_context *ctx, const char *fmt,
+			   int index, char *out, int out_len)
+{
+	char key[128];
+
+	snprintf(key, sizeof(key), fmt, index);
+	return af_uci_get_value(ctx, key, out, out_len);
 }
 
 int af_uci_commit(struct uci_context *ctx, const char *package)
 {
+	struct uci_ptr ptr;
 	int ret = UCI_OK;
 
 	if (!package)
 		return -1;
 
-	struct uci_ptr ptr;
 	if (uci_lookup_ptr(ctx, &ptr, (char *)package, true) != UCI_OK)
 		return -1;
 
-	if (uci_commit(ctx, &ptr.p, false) != UCI_OK) {
+	if (uci_commit(ctx, &ptr.p, false) != UCI_OK)
 		ret = -1;
-		goto done;
-	}
-done:
+
 	if (ptr.p)
 		uci_unload(ctx, ptr.p);
 
 	return ret;
 }
 
-int af_get_uci_list_num(struct uci_context *ctx, char *package, char *section)
+int af_get_uci_list_num(struct uci_context *ctx, const char *package,
+			const char *section)
 {
-	int count = 0;
 	struct uci_package *pkg = NULL;
+	struct uci_element *e;
+	int count = 0;
 
 	if (UCI_OK != uci_load(ctx, package, &pkg))
 		return -1;
 
-	struct uci_element *e;
 	uci_foreach_element(&pkg->sections, e) {
 		struct uci_section *s = uci_to_section(e);
+
 		if (strcmp(s->type, section))
 			continue;
 		count++;
@@ -474,27 +413,21 @@ int af_get_uci_list_num(struct uci_context *ctx, char *package, char *section)
 	return count;
 }
 
-int af_uci_get_array_value(struct uci_context *ctx, char *key_fmt, int index, char *output, int out_len)
-{
-	char key[128] = {0};
-
-	sprintf(key, key_fmt, index);
-	return af_uci_get_value(ctx, key, output, out_len);
-}
-
-int af_uci_add_section(struct uci_context *ctx, char *package_name, char *section)
+int af_uci_add_section(struct uci_context *ctx, const char *pkg_name,
+		       const char *section)
 {
 	struct uci_section *s = NULL;
 	struct uci_package *p = NULL;
 	int ret;
 
-	ret = uci_load(ctx, package_name, &p);
+	ret = uci_load(ctx, pkg_name, &p);
 	if (ret != UCI_OK)
 		goto done;
 
 	ret = uci_add_section(ctx, p, section, &s);
 	if (ret != UCI_OK)
 		goto done;
+
 	ret = uci_save(ctx, p);
 done:
 	if (p)
@@ -502,77 +435,61 @@ done:
 	return ret;
 }
 
-static struct uci_package *config_init_package(const char *config)
-{
-	struct uci_context *ctx = uci_ctx;
-	struct uci_package *p = NULL;
-
-	if (!ctx) {
-		ctx = uci_alloc_context();
-		uci_ctx = ctx;
-		ctx->flags &= ~UCI_FLAG_STRICT;
-	} else {
-		p = uci_lookup_package(ctx, config);
-		if (p)
-			uci_unload(ctx, p);
-	}
-
-	if (uci_load(ctx, config, &p))
-		return NULL;
-
-	return p;
-}
+/* ----------------------------------------------------------------------
+ * Feature tables
+ * -------------------------------------------------------------------- */
 
 char *get_app_name_by_id(int id)
 {
-	for (int i = 0; i < g_app_count; i++) {
+	int i;
+
+	for (i = 0; i < g_app_count; i++)
 		if (id == app_name_table[i].id)
 			return app_name_table[i].name;
-	}
 	return "";
 }
 
 void init_app_name_table(void)
 {
-	char line_buf[2048] = {0};
+	char line[2048];
+	FILE *fp;
 
-	FILE *fp = fopen("/tmp/feature.cfg", "r");
+	fp = fopen("/tmp/feature.cfg", "r");
 	if (!fp) {
 		printf("open file failed\n");
 		return;
 	}
-	g_app_count = 0;
-	while (fgets(line_buf, sizeof(line_buf), fp)) {
-		char *pos1;
-		char app_info_buf[128] = {0};
-		int app_id;
-		char app_name[64] = {0};
-		size_t prefix_len;
 
-		if (strstr(line_buf, "#"))
-			continue;
-		if (strlen(line_buf) < 10)
-			continue;
-		if (!strstr(line_buf, ":"))
+	g_app_count = 0;
+	while (fgets(line, sizeof(line), fp)) {
+		char info[128], name[64];
+		char *colon;
+		size_t plen;
+		int id;
+
+		if (strstr(line, "#") || strlen(line) < 10 ||
+		    !strstr(line, ":"))
 			continue;
 		if (g_app_count >= MAX_SUPPORT_APP_NUM) {
-			LOG_WARN("app count exceeds %d\n",
-				 MAX_SUPPORT_APP_NUM);
+			LOG_WARN("app count exceeds %d\n", MAX_SUPPORT_APP_NUM);
 			break;
 		}
 
-		pos1 = strstr(line_buf, ":");
-		prefix_len = (size_t)(pos1 - line_buf);
-		if (prefix_len >= sizeof(app_info_buf)) {
-			LOG_WARN("feature line prefix too long (%zu), " "skip\n", prefix_len);
+		colon = strstr(line, ":");
+		plen = (size_t)(colon - line);
+		if (plen >= sizeof(info)) {
+			LOG_WARN("feature line prefix too long (%zu), skip\n",
+				 plen);
 			continue;
 		}
-		memcpy(app_info_buf, line_buf, prefix_len);
-		app_info_buf[prefix_len] = '\0';
-		if (sscanf(app_info_buf, "%d %63s", &app_id, app_name) != 2)
+		memcpy(info, line, plen);
+		info[plen] = '\0';
+		if (sscanf(info, "%d %63s", &id, name) != 2)
 			continue;
-		app_name_table[g_app_count].id = app_id;
-		snprintf(app_name_table[g_app_count].name, sizeof(app_name_table[g_app_count].name), "%s", app_name);
+
+		app_name_table[g_app_count].id = id;
+		snprintf(app_name_table[g_app_count].name,
+			 sizeof(app_name_table[g_app_count].name), "%s", name);
 		g_app_count++;
 	}
 	fclose(fp);
@@ -580,105 +497,31 @@ void init_app_name_table(void)
 
 void init_app_class_name_table(void)
 {
-	char line_buf[2048] = {0};
+	char line[2048];
+	FILE *fp;
 
-	FILE *fp = fopen("/tmp/app_class.txt", "r");
+	fp = fopen("/tmp/app_class.txt", "r");
 	if (!fp) {
 		printf("open file failed\n");
 		return;
 	}
-	g_cur_class_num = 0;
-	while (fgets(line_buf, sizeof(line_buf), fp)) {
-		int class_id = 0;
-		char class_name[MAX_CLASS_NAME_LEN] = {0};
 
-		if (sscanf(line_buf, "%d %*s %31s",
-			   &class_id, class_name) != 2) {
-			LOG_WARN("bad app_class line: %s\n", line_buf);
+	g_cur_class_num = 0;
+	while (fgets(line, sizeof(line), fp)) {
+		int id;
+		char name[MAX_CLASS_NAME_LEN];
+
+		if (sscanf(line, "%d %*s %31s", &id, name) != 2) {
+			LOG_WARN("bad app_class line: %s\n", line);
 			continue;
 		}
-		if (class_id < 1 || class_id > MAX_APP_TYPE) {
-			LOG_WARN("app_class id out of range: %d\n", class_id);
+		if (id < 1 || id > MAX_APP_TYPE) {
+			LOG_WARN("app_class id out of range: %d\n", id);
 			continue;
 		}
-		snprintf(CLASS_NAME_TABLE[class_id - 1],
-			 sizeof(CLASS_NAME_TABLE[class_id - 1]), "%s", class_name);
+		snprintf(CLASS_NAME_TABLE[id - 1],
+			 sizeof(CLASS_NAME_TABLE[id - 1]), "%s", name);
 		g_cur_class_num++;
 	}
 	fclose(fp);
-}
-
-// 00:00 9:1
-int check_time_valid(char *t)
-{
-	if (!t)
-		return 0;
-	if (strlen(t) < 3 || strlen(t) > 5 || (!strstr(t, ":")))
-		return 0;
-	else
-		return 1;
-}
-
-int config_get_appfilter_enable(void)
-{
-	struct uci_context *ctx = uci_alloc_context();
-
-	if (!ctx)
-		return -1;
-
-	int enable = af_uci_get_int_value(ctx, "appfilter.global.enable");
-	if (enable < 0)
-		enable = 0;
-
-	uci_free_context(ctx);
-	return enable;
-}
-
-int config_get_lan_ip(char *lan_ip, int len)
-{
-	struct uci_context *ctx = uci_alloc_context();
-
-	if (!ctx)
-		return -1;
-	int ret = af_uci_get_value(ctx, "network.lan.ipaddr", lan_ip, len);
-	uci_free_context(ctx);
-	return ret;
-}
-
-int config_get_lan_mask(char *lan_mask, int len)
-{
-	struct uci_context *ctx = uci_alloc_context();
-
-	if (!ctx)
-		return -1;
-	int ret = af_uci_get_value(ctx, "network.lan.netmask", lan_mask, len);
-	uci_free_context(ctx);
-	return ret;
-}
-
-int appfilter_config_alloc(void)
-{
-	uci_appfilter = config_init_package("appfilter");
-	if (!uci_appfilter) {
-		char *err;
-		uci_get_errorstr(uci_ctx, &err, NULL);
-		printf("Failed to load appfilter config (%s)\n", err);
-		free(err);
-		return -1;
-	}
-
-	return 0;
-}
-
-int appfilter_config_free(void)
-{
-	if (uci_appfilter) {
-		uci_unload(uci_ctx, uci_appfilter);
-		uci_appfilter = NULL;
-	}
-	if (uci_ctx) {
-		uci_free_context(uci_ctx);
-		uci_ctx = NULL;
-	}
-	return 0;
 }
