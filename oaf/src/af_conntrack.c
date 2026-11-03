@@ -219,7 +219,7 @@ static int af_conn_seq_show(struct seq_file *s, void *v)
 	sprintf(dst_ip_str, "%pI4", &node->dst_ip);
 	unsigned long inactive_time = jiffies - node->last_jiffies;
 
-	seq_printf(s, "%-4d %-20s %-20s %-12d %-12d %-12d %-12d %-12d %-12d %-12d\n", st->index, src_ip_str, dst_ip_str,
+	seq_printf(s, "%-4d %-20s %-20s %-12d %-12d %-12d %-12d %-12d %-12lu %-12d\n", st->index, src_ip_str, dst_ip_str,
 		   node->src_port, node->dst_port, node->protocol, node->app_id, node->drop, inactive_time, node->total_pkts);
 	return 0;
 }
