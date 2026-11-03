@@ -132,7 +132,6 @@ void af_conn_clean_timeout(void)
 		last_bucket = i;
 		count++;
 		if (count > MAX_AF_CONN_CHECK_COUNT) {
-			last_bucket = i + 1;
 			break;
 		}
 		last_bucket = i + 1;
@@ -218,7 +217,7 @@ static int af_conn_seq_show(struct seq_file *s, void *v)
 	st->index++;
 	sprintf(src_ip_str, "%pI4", &node->src_ip);
 	sprintf(dst_ip_str, "%pI4", &node->dst_ip);
-	u_int32_t inactive_time = jiffies - node->last_jiffies;
+	unsigned long inactive_time = jiffies - node->last_jiffies;
 
 	seq_printf(s, "%-4d %-20s %-20s %-12d %-12d %-12d %-12d %-12d %-12d %-12d\n", st->index, src_ip_str, dst_ip_str,
 		   node->src_port, node->dst_port, node->protocol, node->app_id, node->drop, inactive_time, node->total_pkts);
