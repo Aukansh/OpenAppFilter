@@ -421,6 +421,8 @@ void af_load_config(af_config_t *config)
 	af_load_global_config(&config->global);
 	if (1 == af_load_time_config(&config->time))
 		apply_time_config_to_uci(&config->time);
+
+	load_dev_time_rules_from_uci();
 }
 
 void update_oaf_proc_value(char *key, char *value)
@@ -1027,6 +1029,8 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_status();
 		check_all_users_period_time();
 	}
+	update_time_exempt_macs();
+
 	if (count % 60 == 0) {
 		LOG_DEBUG("begin check dev count = %d\n", count);
 		check_dev_visit_info_expire();
@@ -1120,6 +1124,7 @@ int main(int argc, char **argv)
 	signal(SIGUSR2, handle_sigusr2);
 	signal(SIGCHLD, SIG_IGN);
 	init_dev_node_htable();
+	dev_time_rule_init();
 
 	load_user_time_from_file();
 	check_all_users_period_time();
