@@ -1979,6 +1979,12 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 
 		af_uci_add_section(uci_ctx, "appfilter", "af_user");
 		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].mac", mac_lower);
+		struct json_object *mode_obj = json_object_object_get(req_obj, "time_mode");
+		if (mode_obj) {
+			af_uci_set_int_value(uci_ctx, "appfilter.@af_user[-1].time_mode", json_object_get_int(mode_obj));
+		} else {
+			af_uci_set_int_value(uci_ctx, "appfilter.@af_user[-1].time_mode", 1);
+		}
 	}
 	printf("add af_user ok\n");
 	af_uci_commit(uci_ctx, "appfilter");

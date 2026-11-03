@@ -1,8 +1,9 @@
 #ifndef __APPFILTER_H__
 #define __APPFILTER_H__
 
-#define MIN_INET_ADDR_LEN			7
+#define MIN_INET_ADDR_LEN	7
 #define AF_CMD_SET_BLOCKED_MAC_LIST	6
+#define AF_CMD_SET_MAC_LIST	4
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,6 +91,7 @@ typedef struct af_run_time_status {
 
 void af_log(LogLevel level, const char *format, ...);
 void sync_blocked_macs_to_kernel(void);
+void sync_selected_macs_to_kernel(void);
 extern af_config_t g_af_config;
 extern int g_feature_update_time;
 

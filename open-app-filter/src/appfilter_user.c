@@ -290,6 +290,57 @@ void clean_dev_selected_flag(void)
 	dev_foreach(NULL, clean_dev_selected_flag_iter);
 }
 
+void check_user_time_rule_realtime(void)
+{
+	extern af_config_t g_af_config;
+	if (g_af_config.global.user_mode == 0) return;
+
+	time_t now = time(NULL);
+	struct tm *current_time = localtime(&now);
+	int current_minutes = current_time->tm_hour * 60 + current_time->tm_min;
+	int changed = 0;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			int in_time = 0;
+
+			if (node->time_mode == 0 || strlen(node->time_start) == 0 || strlen(node->time_end) == 0) {
+				in_time = 1;
+			} else {
+				int sh = 0, sm = 0, eh = 23, em = 59;
+				sscanf(node->time_start, "%d:%d", &sh, &sm);
+				sscanf(node->time_end, "%d:%d", &eh, &em);
+
+				int s_min = sh * 60 + sm;
+				int e_min = eh * 60 + em;
+
+				if (s_min <= e_min) {
+					in_time = (current_minutes >= s_min && current_minutes <= e_min);
+				} else {
+					in_time = (current_minutes >= s_min || current_minutes <= e_min);
+				}
+			}
+
+			int new_selected = in_time ? 1 : 0;
+			if (node->is_selected != new_selected) {
+				node->is_selected = new_selected;
+				if (!new_selected) {
+					node->blocked = 0;
+				}
+				changed = 1;
+				LOG_DEBUG("Device %s time window hit, is_selected=%d\n", node->mac, new_selected);
+			}
+			node = node->next;
+		}
+	}
+
+	if (changed) {
+		sync_selected_macs_to_kernel();
+		LOG_DEBUG("Synced changed time windows to kernel\n");
+	}
+}
+
 void update_dev_selected_flag(void)
 {
 	extern af_config_t g_af_config;
@@ -333,50 +384,28 @@ void update_dev_selected_flag(void)
 					       sizeof(mac_str));
 			node = find_dev_node(mac_str);
 			if (node) {
-				char start_str[16] = {0};
-				char end_str[16] = {0};
 				char key[128] = {0};
+				char tmp_str[32] = {0};
 				
+				node->time_mode = 0;
+				snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_mode", i);
+				if (af_uci_get_value(uci_ctx, key, tmp_str, sizeof(tmp_str)) == 0) {
+					node->time_mode = atoi(tmp_str);
+				}
+				node->time_start[0] = '\0';
+				node->time_end[0] = '\0';
 				snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_start", i);
-				af_uci_get_value(uci_ctx, key, start_str, sizeof(start_str));
+				af_uci_get_value(uci_ctx, key, node->time_start, sizeof(node->time_start));
 				snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_end", i);
-				af_uci_get_value(uci_ctx, key, end_str, sizeof(end_str));
-
-				int in_time = 0;
-				if (strlen(start_str) > 0 && strlen(end_str) > 0) {
-					int sh = 0, sm = 0, eh = 23, em = 59;
-					sscanf(start_str, "%d:%d", &sh, &sm);
-					sscanf(end_str, "%d:%d", &eh, &em);
-					int s_min = sh * 60 + sm;
-					int e_min = eh * 60 + em;
-
-					if (s_min <= e_min) {
-						if (current_minutes >= s_min && current_minutes <= e_min) {
-							in_time = 1;
-						}
-					} else {
-						if (current_minutes >= s_min || current_minutes <= e_min) {
-							in_time = 1;
-						}
-					}
-					LOG_INFO("=== [Time Check] MAC:%s | 当前:%02d:%02d | 规则:%s-%s | 匹配结果:%d ===\n", node->mac, current_time->tm_hour, current_time->tm_min, start_str, end_str, in_time);
-				} else {
-					in_time = 1; 
-					LOG_INFO("=== [Time Check] MAC:%s | 无时间规则，默认放行(1) ===\n", node->mac);
-				}
-
-				if (in_time) {
-					node->is_selected = 1;
-				} else {
-					node->is_selected = 0;
-					node->blocked = 0;
-					LOG_DEBUG("Time rule: mac=%s not in range, unselect\n", node->mac);
-				}
+				af_uci_get_value(uci_ctx, key, node->time_end, sizeof(node->time_end));
+				
+				node->is_selected = 0;
 			}
 		}
 		uci_free_context(uci_ctx);
 		LOG_DEBUG("Manual mode: %d users from af_user config are selected\n", num);
 	}
+	check_user_time_rule_realtime();
 }
 
 void clean_dev_online_status(void)
