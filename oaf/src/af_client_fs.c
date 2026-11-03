@@ -197,7 +197,8 @@ static int af_visiting_seq_show(struct seq_file *s, void *v)
 		visiting_app = node->visiting.visiting_app;
 	}
 	if (af_get_timestamp_sec() - node->visiting.url_time < 120) {
-		strncpy(visiting_url, node->visiting.visiting_url, sizeof(visiting_url));
+		strncpy(visiting_url, node->visiting.visiting_url, sizeof(visiting_url) - 1);
+		visiting_url[sizeof(visiting_url) - 1] = '\0';
 	} else {
 		strcpy(visiting_url, "none");
 	}
