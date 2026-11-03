@@ -38,8 +38,7 @@ THE SOFTWARE.
 #include <stdio.h>
 #include "utils.h"
 
-#define CMD_GET_LAN_IP_FMT	"ifconfig %s | grep 'inet addr' | awk '{print $2}' | awk -F: '{print $2}'"
-#define CMD_GET_LAN_MASK_FMT	"ifconfig %s | grep 'inet addr' | awk '{print $4}' | awk -F: '{print $2}'"
+#define CMD_GET_LAN_CIDR_FMT	"ip -4 addr show dev %s 2>/dev/null | awk '/inet /{print $2; exit}'"
 #define FORCE_DISCONNECT_HOLD_SECS	11
 
 enum {
@@ -195,8 +194,13 @@ int af_load_time_config(af_time_config_t *t_config)
 	char *p = strtok_r(days_buf, " ", &saveptr2);
 	if (p) {
 		do {
-			t_config->days[atoi(p)] = 1;
-			printf("af_load_time_config: day[%d] = 1\n", atoi(p));
+			int day_val = atoi(p);
+			if (day_val >= 0 && day_val < 7) {
+				t_config->days[day_val] = 1;
+				printf("af_load_time_config: day[%d] = 1\n", day_val);
+			} else {
+				LOG_WARN("af_load_time_config: invalid day value %d, skip\n", day_val);
+			}
 			p = strtok_r(NULL, " ", &saveptr2);
 		} while (p != NULL);
 	}
@@ -448,8 +452,43 @@ void update_oaf_proc_u32_value(char *key, u_int32_t value)
 	update_oaf_proc_value(key, buf);
 }
 
+/*
+ * Parse a CIDR string such as "192.168.1.1/24" into dotted-quad IP
+ * and dotted-quad netmask. Returns 0 on success, -1 on failure.
+ */
+static int parse_cidr_ipv4(const char *cidr, char *ip_out, int ip_len,
+			   char *mask_out, int mask_len)
+{
+	char buf[64] = {0};
+	char *slash;
+	int prefix;
+	uint32_t mask_h;
+	struct in_addr ma;
+
+	if (!cidr || !ip_out || !mask_out || ip_len <= 0 || mask_len <= 0)
+		return -1;
+	if (strlen(cidr) >= sizeof(buf))
+		return -1;
+	strncpy(buf, cidr, sizeof(buf) - 1);
+
+	slash = strchr(buf, '/');
+	if (!slash)
+		return -1;
+	*slash = '\0';
+	prefix = atoi(slash + 1);
+	if (prefix < 0 || prefix > 32)
+		return -1;
+
+	snprintf(ip_out, ip_len, "%s", buf);
+	mask_h = (prefix == 0) ? 0 : (0xFFFFFFFFu << (32 - prefix));
+	ma.s_addr = htonl(mask_h);
+	snprintf(mask_out, mask_len, "%s", inet_ntoa(ma));
+	return 0;
+}
+
 void update_lan_ip(void)
 {
+	char cidr[64] = {0};
 	char ip_str[32] = {0};
 	char mask_str[32] = {0};
 	struct in_addr addr;
@@ -457,8 +496,7 @@ void update_lan_ip(void)
 	u_int32_t lan_ip = 0;
 	u_int32_t lan_mask = 0;
 	char lan_ifname[32] = {0};
-	char ip_cmd_buf[128] = {0};
-	char mask_cmd_buf[128] = {0};
+	char cidr_cmd_buf[128] = {0};
 	struct uci_context *ctx = uci_alloc_context();
 
 	if (!ctx) {
@@ -481,25 +519,29 @@ void update_lan_ip(void)
 		}
 	}
 
-	sprintf(ip_cmd_buf, CMD_GET_LAN_IP_FMT, lan_ifname);
-	sprintf(mask_cmd_buf, CMD_GET_LAN_MASK_FMT, lan_ifname);
+	sprintf(cidr_cmd_buf, CMD_GET_LAN_CIDR_FMT, lan_ifname);
+	exec_with_result_line(cidr_cmd_buf, cidr, sizeof(cidr));
 
-	exec_with_result_line(ip_cmd_buf, ip_str, sizeof(ip_str));
-	if (strlen(ip_str) < MIN_INET_ADDR_LEN) {
+	if (strlen(cidr) == 0 ||
+	    parse_cidr_ipv4(cidr, ip_str, sizeof(ip_str),
+			    mask_str, sizeof(mask_str)) != 0) {
 		update_oaf_proc_u32_value("lan_ip", 0);
-	} else {
-		inet_aton(ip_str, &addr);
-		lan_ip = addr.s_addr;
-		update_oaf_proc_u32_value("lan_ip", lan_ip);
+		update_oaf_proc_u32_value("lan_mask", 0);
+		uci_free_context(ctx);
+		return;
 	}
 
-	exec_with_result_line(mask_cmd_buf, mask_str, sizeof(mask_str));
-	if (strlen(mask_str) < MIN_INET_ADDR_LEN) {
-		update_oaf_proc_u32_value("lan_mask", 0);
+	if (inet_aton(ip_str, &addr)) {
+		lan_ip = addr.s_addr;
+		update_oaf_proc_u32_value("lan_ip", lan_ip);
 	} else {
-		inet_aton(mask_str, &mask_addr);
+		update_oaf_proc_u32_value("lan_ip", 0);
+	}
+	if (inet_aton(mask_str, &mask_addr)) {
 		lan_mask = mask_addr.s_addr;
 		update_oaf_proc_u32_value("lan_mask", lan_mask);
+	} else {
+		update_oaf_proc_u32_value("lan_mask", 0);
 	}
 	uci_free_context(ctx);
 }
@@ -638,55 +680,6 @@ void sync_blocked_macs_to_kernel(void)
 		fwrite(buf, 1, strlen(buf), fp);
 		fclose(fp);
 		LOG_INFO("sync blocked macs to kernel: %s\n", buf);
-	} else {
-		LOG_ERROR("open /dev/appfilter failed\n");
-	}
-	strncpy(last_json, buf, sizeof(last_json) - 1);
-	last_json[sizeof(last_json) - 1] = '\0';
-}
-
-static void sync_selected_macs_to_kernel(void)
-{
-	static char last_json[4096] = {0};
-	char buf[4096] = {0};
-	int pos = 0;
-	int first = 1;
-	int ret;
-
-	ret = snprintf(buf + pos, sizeof(buf) - pos,
-		       "{\"op\":%d,\"data\":{\"mac_list\":[",
-		       AF_CMD_SET_MAC_LIST); // op=4
-	if (ret < 0 || ret >= (int)sizeof(buf))
-		return;
-	pos += ret;
-
-	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-		dev_node_t *node = dev_hash_table[i];
-		while (node) {
-			if (node->is_selected) {
-				ret = snprintf(buf + pos, sizeof(buf) - pos,
-					       first ? "\"%s\"" : ",\"%s\"",
-					       node->mac);
-				if (ret < 0 || pos + ret >= (int)sizeof(buf)) return;
-				pos += ret;
-				first = 0;
-			}
-			node = node->next;
-		}
-	}
-	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
-	if (ret < 0 || pos + ret >= (int)sizeof(buf)) return;
-	pos += ret;
-
-	if (strcmp(buf, last_json) == 0)
-		return;
-
-	system("conntrack -F >/dev/null 2>&1");
-	FILE *fp = fopen("/dev/appfilter", "w");
-	if (fp) {
-		fwrite(buf, 1, strlen(buf), fp);
-		fclose(fp);
-		LOG_INFO("sync selected macs to kernel: %s\n", buf);
 	} else {
 		LOG_ERROR("open /dev/appfilter failed\n");
 	}
@@ -877,6 +870,9 @@ int af_check_time_valid(af_time_config_t *t_config)
 	else
 		return 0;
 }
+
+static int g_force_disconnect_hold = 0;
+
 static void force_disconnect_tick(int trigger)
 {
 	static int    g_fd_state = FD_STATE_IDLE;
@@ -884,7 +880,8 @@ static void force_disconnect_tick(int trigger)
 	time_t now;
 
 	if (trigger) {
-		g_fd_state = FD_STATE_ENTER_ALL;
+		if (g_fd_state != FD_STATE_WAIT)
+			g_fd_state = FD_STATE_ENTER_ALL;
 		g_fd_start = 0;
 		LOG_INFO("force_disconnect: scheduled (restart)\n");
 		return;
@@ -896,6 +893,7 @@ static void force_disconnect_tick(int trigger)
 
 	case FD_STATE_ENTER_ALL:
 		update_oaf_proc_value("app_filter_mode", "1");
+		g_force_disconnect_hold = 1;
 		g_fd_start = time(NULL);
 		g_fd_state = FD_STATE_WAIT;
 		LOG_INFO("force_disconnect: switched to all-apps mode, "
@@ -906,6 +904,7 @@ static void force_disconnect_tick(int trigger)
 		now = time(NULL);
 		if (now - g_fd_start >= FORCE_DISCONNECT_HOLD_SECS) {
 			update_oaf_proc_value("app_filter_mode", "0");
+			g_force_disconnect_hold = 0;
 			g_fd_state = FD_STATE_IDLE;
 			LOG_INFO("force_disconnect: restored specified-apps " "mode\n");
 		}
@@ -967,6 +966,10 @@ void update_oaf_disable_quic_status(void)
 
 void update_oaf_app_filter_mode_status(void)
 {
+	if (g_force_disconnect_hold) {
+		LOG_DEBUG("skip app_filter_mode update during force_disconnect hold\n");
+		return;
+	}
 	update_oaf_proc_value("app_filter_mode",
 			      g_af_config.global.app_filter_mode == 1 ? "1" : "0");
 }
@@ -1073,7 +1076,6 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 
 	if (count % 10 == 0) {
 		update_dev_list();
-		sync_selected_macs_to_kernel();
 		update_oaf_status();
 		check_all_users_period_time();
 	}
@@ -1097,7 +1099,6 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_lan_ip();
 		af_load_config(&g_af_config);
 		update_dev_selected_flag();
-		sync_selected_macs_to_kernel();
 		update_dynamic_used_time(&g_af_config.time);
 		update_oaf_status();
 		update_oaf_record_status();
