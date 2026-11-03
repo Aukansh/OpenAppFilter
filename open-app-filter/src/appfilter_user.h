@@ -99,6 +99,22 @@ struct app_visit_stat_info
 	int num;
 	struct app_visit_info visit_list[MAX_APP_STAT_NUM];
 };
+
+typedef struct dev_time_rule {
+	int mode;        /* 0 = all-day (default), 1 = specific window */
+	int start_min;   /* 0..1439, minutes since 00:00 */
+	int end_min;     /* 0..1439 */
+} dev_time_rule_t;
+
+typedef struct dev_time_rule_node {
+	char mac[MAX_MAC_LEN];
+	dev_time_rule_t rule;
+	struct dev_time_rule_node *next;
+} dev_time_rule_node_t;
+
+#define MAX_DEV_TIME_RULE_HASH_SIZE 64
+extern dev_time_rule_node_t *dev_time_rule_table[MAX_DEV_TIME_RULE_HASH_SIZE];
+
 typedef void (*iter_func)(void *arg, dev_node_t *dev);
 //todo:dev for each
 extern dev_node_t *dev_hash_table[MAX_DEV_NODE_HASH_SIZE];
@@ -134,5 +150,14 @@ void reset_all_users_today_flow(void);
 void check_all_users_period_time(void);
 void update_dev_online_status(void);
 void mac_copy_lower(char *dst, const char *src, size_t dst_len);
+
+void dev_time_rule_init(void);
+void dev_time_rule_flush(void);
+dev_time_rule_node_t *dev_time_rule_find(const char *mac);
+void dev_time_rule_set(const char *mac, const dev_time_rule_t *rule);
+void dev_time_rule_del(const char *mac);
+void load_dev_time_rules_from_uci(void);
+int  af_dev_time_in_rule(const dev_time_rule_t *rule, time_t now);
+void update_time_exempt_macs(void);
 
 #endif
