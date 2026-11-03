@@ -64,9 +64,10 @@ void af_log(LogLevel level, const char *format, ...)
 		}
 	}
 
-	struct stat st;
-	if (stat(LOG_FILE_PATH, &st) == 0 &&
-	    st.st_size > AF_LOG_FILE_MAX_SIZE) {
+	fseek(af_log_fp, 0, SEEK_END);
+	long file_size = ftell(af_log_fp);
+
+	if (file_size > AF_LOG_FILE_MAX_SIZE) {
 		fclose(af_log_fp);
 		af_log_fp = NULL;
 		rename(LOG_FILE_PATH, LOG_FILE_PATH ".1");
