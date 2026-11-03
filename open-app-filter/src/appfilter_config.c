@@ -369,9 +369,13 @@ int af_uci_set_value(struct uci_context *ctx, char *key, char *value)
 	snprintf(param_tmp, sizeof(param_tmp), "%s=%s", key, value);
 
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
+	int lookup_ret = uci_lookup_ptr(ctx, &ptr, param_tmp, true);
+	if (lookup_ret != UCI_OK && lookup_ret != UCI_ERR_NOTFOUND) {
 		ret = 1;
 		return ret;
+	}
+	if (ptr.o == NULL && ptr.s == NULL) {
+		return 1;
 	}
 
 	struct uci_element *e = ptr.last;
@@ -395,9 +399,13 @@ int af_uci_set_int_value(struct uci_context *ctx, char *key, int value)
 	snprintf(param_tmp, sizeof(param_tmp), "%s=%d", key, value);
 
 	struct uci_ptr ptr;
-	if (uci_lookup_ptr(ctx, &ptr, param_tmp, true) != UCI_OK) {
+	int lookup_ret = uci_lookup_ptr(ctx, &ptr, param_tmp, true);
+	if (lookup_ret != UCI_OK && lookup_ret != UCI_ERR_NOTFOUND) {
 		ret = 1;
 		return ret;
+	}
+	if (ptr.o == NULL && ptr.s == NULL) {
+		return 1;
 	}
 	struct uci_element *e = ptr.last;
 	ret = uci_set(ctx, &ptr);
