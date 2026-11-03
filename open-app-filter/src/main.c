@@ -968,18 +968,39 @@ void update_oaf_status(void)
 	static int last_blocked_count = 0;
 	int cur_blocked_count = 0;
 	int need_force = 0;
-
-	if (g_af_config.global.enable == 1) {
-		ret = af_check_time_valid(&g_af_config.time);
-	}
+	int any_selected = 0;
 
 	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *n = dev_hash_table[i];
 
 		while (n) {
-			if (n->is_selected && n->blocked)
+			if (n->is_selected) {
+				any_selected = 1;
+			}
+			if (n->is_selected && n->blocked) {
 				cur_blocked_count++;
+			}
 			n = n->next;
+		}
+	}
+
+	if (g_af_config.global.enable == 1) {
+		if (g_af_config.global.user_mode == 1) {
+			if (any_selected) {
+				if (g_af_config.time.time_mode == 0) {
+					if (g_af_config.time.time_num > 0) {
+						ret = af_check_time_valid(&g_af_config.time);
+					} else {
+						ret = 1;
+					}
+				} else {
+					ret = af_check_time_valid(&g_af_config.time);
+				}
+			} else {
+				ret = 0; 
+			}
+		} else {
+			ret = af_check_time_valid(&g_af_config.time);
 		}
 	}
 
@@ -1148,6 +1169,8 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_lan_ip();
 		af_load_config(&g_af_config);
 		update_dev_selected_flag();
+		sync_selected_macs_to_kernel();
+		sync_blocked_macs_to_kernel();
 		update_dynamic_used_time(&g_af_config.time);
 		update_oaf_status();
 		update_oaf_record_status();
