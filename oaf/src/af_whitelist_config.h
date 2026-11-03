@@ -28,4 +28,10 @@ af_blocked_mac_node_t *af_blocked_mac_find(unsigned char *mac);
 af_blocked_mac_node_t *af_blocked_mac_add(unsigned char *mac);
 int af_config_set_blocked_mac_list(cJSON *data_obj);
 
+void af_time_exempt_mac_init(void);
+void af_time_exempt_mac_flush(void);
+af_blocked_mac_node_t *af_time_exempt_mac_find(unsigned char *mac);
+af_blocked_mac_node_t *af_time_exempt_mac_add(unsigned char *mac);
+int af_config_set_time_exempt_mac_list(cJSON *data_obj);
+
 #endif
