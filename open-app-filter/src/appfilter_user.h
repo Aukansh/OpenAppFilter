@@ -84,6 +84,7 @@ typedef struct dev_node
 	u_int32_t today_pm_active_time;
 	int is_selected; 
 	int blocked;
+	int is_af_user;
 	int time_mode;              
 	char time_start[16];
 	char time_end[16];
