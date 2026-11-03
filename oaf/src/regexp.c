@@ -257,12 +257,6 @@ static int matchhere(RE *regexp, char *text)
 	return 0;
 }
 
-/* 
- * return value:
- *		-1		error
- *		0		not match
- *		1		matched
- */
 int regexp_match(char *reg, char *text)
 {
 	int ret;
@@ -286,33 +280,4 @@ int regexp_match(char *reg, char *text)
 out:
 	regexp_free(regexp);
 	return ret;
-}
-
-
-static __maybe_unused void TEST_reg_func(char *reg, char * str, int ret)
-{
-	
-	if (ret != regexp_match(reg, str)) {
-		if (reg)
-			printk("reg = %s,", reg);
-		else
-			printk("reg = null");
-		if (str)
-			printk("str = %s ", str);
-		else
-			printk("str= null");
-		printk("error, unit test.... failed, ret = %d\n",ret);
-	}
-	else {
-		if (reg && str)
-			printk("[unit test] %s %s......ok,ret = %d\n", reg, str, ret);
-	}
-}
-
-static __maybe_unused void TEST_regexp(void)
-{
-	TEST_reg_func(".*baidu.com$", "www.baidu.com", 1);
-	TEST_reg_func("^sina.com", "www.sina.com.cn", 0);
-	TEST_reg_func("^sina.com", "sina.com.cn", 1);
-	TEST_reg_func(".*baidu.com$", "www.baidu.com223", 0);
 }
