@@ -687,6 +687,55 @@ void sync_blocked_macs_to_kernel(void)
 	last_json[sizeof(last_json) - 1] = '\0';
 }
 
+void sync_selected_macs_to_kernel(void)
+{
+	static char last_json[4096] = {0};
+	char buf[4096] = {0};
+	int pos = 0;
+	int first = 1;
+	int ret;
+
+	ret = snprintf(buf + pos, sizeof(buf) - pos,
+		       "{\"op\":%d,\"data\":{\"mac_list\":[",
+		       AF_CMD_SET_MAC_LIST);
+	if (ret < 0 || ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
+
+	for (int i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+		dev_node_t *node = dev_hash_table[i];
+		while (node) {
+			if (node->is_selected) {
+				ret = snprintf(buf + pos, sizeof(buf) - pos,
+					       first ? "\"%s\"" : ",\"%s\"",
+					       node->mac);
+				if (ret < 0 || pos + ret >= (int)sizeof(buf)) return;
+				pos += ret;
+				first = 0;
+			}
+			node = node->next;
+		}
+	}
+	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	if (ret < 0 || pos + ret >= (int)sizeof(buf)) return;
+	pos += ret;
+
+	if (strcmp(buf, last_json) == 0)
+		return;
+
+	system("conntrack -F >/dev/null 2>&1");
+	FILE *fp = fopen("/dev/appfilter", "w");
+	if (fp) {
+		fwrite(buf, 1, strlen(buf), fp);
+		fclose(fp);
+		LOG_INFO("sync selected macs to kernel: %s\n", buf);
+	} else {
+		LOG_ERROR("open /dev/appfilter failed\n");
+	}
+	strncpy(last_json, buf, sizeof(last_json) - 1);
+	last_json[sizeof(last_json) - 1] = '\0';
+}
+
 int af_check_time_period_limit(af_time_config_t *t_config)
 {
 	int total_active_time = 0;
@@ -1078,6 +1127,7 @@ void oaf_timeout_handler(struct uloop_timeout *t)
 		update_dev_list();
 		update_oaf_status();
 		check_all_users_period_time();
+		check_user_time_rule_realtime();
 	}
 	if (count % 60 == 0) {
 		LOG_DEBUG("begin check dev count = %d\n", count);
