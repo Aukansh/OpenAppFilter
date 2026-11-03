@@ -30,6 +30,8 @@ THE SOFTWARE.
 #include "appfilter.h"
 #include <uci.h>
 
+#define AF_LOG_FILE_MAX_SIZE (2 * 1024 * 1024)
+
 app_name_info_t app_name_table[MAX_SUPPORT_APP_NUM];
 int g_app_count = 0;
 int g_cur_class_num = 0;
@@ -57,6 +59,20 @@ void af_log(LogLevel level, const char *format, ...)
 		af_log_fp = fopen(LOG_FILE_PATH, "a");
 		if (!af_log_fp) {
 			perror("Failed to open log file");
+			pthread_mutex_unlock(&af_log_mutex);
+			return;
+		}
+	}
+
+	struct stat st;
+	if (stat(LOG_FILE_PATH, &st) == 0 &&
+	    st.st_size > AF_LOG_FILE_MAX_SIZE) {
+		fclose(af_log_fp);
+		af_log_fp = NULL;
+		rename(LOG_FILE_PATH, LOG_FILE_PATH ".1");
+		af_log_fp = fopen(LOG_FILE_PATH, "a");
+		if (!af_log_fp) {
+			perror("Failed to open log file after rotate");
 			pthread_mutex_unlock(&af_log_mutex);
 			return;
 		}
@@ -472,8 +488,8 @@ int af_uci_add_section(struct uci_context *ctx, char *package_name, char *sectio
 		goto done;
 	ret = uci_save(ctx, p);
 done:
-	if (s)
-		fprintf(stdout, "%s\n", s->e.name);
+	if (p)
+		uci_unload(ctx, p);
 	return ret;
 }
 

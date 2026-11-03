@@ -214,6 +214,13 @@ EXIT:
 int send_msg_to_kernel(int fd, void *msg, int len)
 {
 	struct sockaddr_nl daddr;
+	int payload_len;
+	struct nlmsghdr *nlh;
+	char msg_buf[MAX_NL_MSG_LEN] = {0};
+	struct af_msg_hdr *hdr;
+	char *p_data;
+	int ret;
+
 	if (!msg || len <= 0 || len > MAX_NL_MSG_LEN - (int)sizeof(struct af_msg_hdr)) {
 		return -1;
 	}
@@ -223,28 +230,30 @@ int send_msg_to_kernel(int fd, void *msg, int len)
 	daddr.nl_pid = 0;      // to kernel
 	daddr.nl_groups = 0;
 
-	struct nlmsghdr *nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_NL_MSG_LEN));
+	/* Only send the bytes that actually carry data, not the whole 1 KB
+	 * scratch buffer, so we avoid transmitting padding / stale bytes. */
+	payload_len = len + (int)sizeof(struct af_msg_hdr);
+	nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(payload_len));
 	if (!nlh) {
 		perror("malloc");
 		return -1;
 	}
-	nlh->nlmsg_len = NLMSG_SPACE(MAX_NL_MSG_LEN);
+	nlh->nlmsg_len = NLMSG_SPACE(payload_len);
 	nlh->nlmsg_flags = 0;
 	nlh->nlmsg_type = 0;
 	nlh->nlmsg_seq = 0;
 	nlh->nlmsg_pid = DEFAULT_USR_NL_PID;
 
-	char msg_buf[MAX_NL_MSG_LEN] = {0};
-	struct af_msg_hdr *hdr = (struct af_msg_hdr *)msg_buf;
+	hdr = (struct af_msg_hdr *)msg_buf;
 	hdr->magic = 0xa0b0c0d0;
 	hdr->len = len;
-	char *p_data = msg_buf + sizeof(struct af_msg_hdr);
+	p_data = msg_buf + sizeof(struct af_msg_hdr);
 	memcpy(p_data, msg, len);
 
-	memcpy(NLMSG_DATA(nlh), msg_buf, len + sizeof(struct af_msg_hdr));
+	memcpy(NLMSG_DATA(nlh), msg_buf, payload_len);
 
-	int ret = sendto(fd, nlh, nlh->nlmsg_len, 0,
-			 (struct sockaddr *)&daddr, sizeof(struct sockaddr_nl));
+	ret = sendto(fd, nlh, nlh->nlmsg_len, 0,
+		     (struct sockaddr *)&daddr, sizeof(struct sockaddr_nl));
 	free(nlh);
 
 	if (ret < 0) {

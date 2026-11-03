@@ -1026,18 +1026,12 @@ static int match_feature(flow_info_t *flow)
 
 static int match_app_filter_user(u_int8_t *mac)
 {
-
-	if (af_time_exempt_mac_find(mac)) {
-		AF_LMT_DEBUG("time-exempt mac = " MAC_FMT "\n", MAC_ARRAY(mac));
-		return AF_FALSE;
-	}
-
-	if (!g_user_mode) {
+	if (!g_user_mode) { // auto mode
 		if (af_whitelist_mac_find(mac)) {
 			AF_LMT_DEBUG("match whitelist mac = " MAC_FMT "\n", MAC_ARRAY(mac));
 			return AF_FALSE;
 		}
-	} else {
+	} else { // manual mode
 		if (!af_mac_find(mac)) {
 			return AF_FALSE;
 		}
@@ -2049,7 +2043,6 @@ static int __init app_filter_init(void)
 	af_mac_list_init();
 	af_whitelist_mac_init();
 	af_blocked_mac_init();
-	af_time_exempt_mac_init();
 
 	af_init_app_status();
 	init_af_client_procfs();
@@ -2082,7 +2075,6 @@ static void app_filter_fini(void)
 	af_mac_list_flush();
 	af_whitelist_mac_flush();
 	af_blocked_mac_flush();
-	af_time_exempt_mac_flush();
 	af_unregister_dev();
 	af_log_exit();
 	af_client_exit();
