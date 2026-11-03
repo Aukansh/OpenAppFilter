@@ -84,6 +84,9 @@ typedef struct dev_node
 	u_int32_t today_pm_active_time;
 	int is_selected; 
 	int blocked;
+	int time_mode;              
+	char time_start[16];
+	char time_end[16];
 	struct dev_node *next;
 } dev_node_t;
 
@@ -134,5 +137,6 @@ void reset_all_users_today_flow(void);
 void check_all_users_period_time(void);
 void update_dev_online_status(void);
 void mac_copy_lower(char *dst, const char *src, size_t dst_len);
+void check_user_time_rule_realtime(void);
 
 #endif
