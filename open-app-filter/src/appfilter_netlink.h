@@ -20,25 +20,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef __APPFILTER_NETLINK_H__
-#define __APPFILTER_NETLINK_H__
+/* SPDX-License-Identifier: MIT */
+#ifndef _APPFILTER_NETLINK_H
+#define _APPFILTER_NETLINK_H
 
 #define DEFAULT_USR_NL_PID		999
 #define OAF_NETLINK_ID			29
 #define MAX_OAF_NETLINK_MSG_LEN		1024
-#define MAX_AF_MSG_DATA_LEN		800
 #define MAX_FEATURE_LINE_LEN		600
+
+struct uloop_fd;
 
 struct af_msg_hdr {
 	int magic;
 	int len;
 };
 
-enum E_MSG_TYPE {
+enum af_msg_type {
 	AF_MSG_INIT,
 	AF_MSG_ADD_FEATURE,
 	AF_MSG_CLEAN_FEATURE,
-	AF_MSG_MAX
+	AF_MSG_MAX,
 };
 
 typedef struct af_msg {
