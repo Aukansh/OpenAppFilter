@@ -1786,6 +1786,22 @@ static int handle_get_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 			json_object_object_add(user_obj, "nickname", json_object_new_string(""));
 			json_object_object_add(user_obj, "hostname", json_object_new_string(""));
 		}
+
+		char key[128] = {0};
+		char tmp_start[32] = "00:00";
+		char tmp_end[32] = "23:59";
+		char tmp_mode[8] = "1";
+		
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_start", i);
+		af_uci_get_value(uci_ctx, key, tmp_start, sizeof(tmp_start));
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_end", i);
+		af_uci_get_value(uci_ctx, key, tmp_end, sizeof(tmp_end));
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_mode", i);
+		af_uci_get_value(uci_ctx, key, tmp_mode, sizeof(tmp_mode));
+
+		json_object_object_add(user_obj, "time_start", json_object_new_string(strlen(tmp_start) > 0 ? tmp_start : "00:00"));
+		json_object_object_add(user_obj, "time_end", json_object_new_string(strlen(tmp_end) > 0 ? tmp_end : "23:59"));
+		json_object_object_add(user_obj, "time_mode", json_object_new_int(atoi(tmp_mode)));
 		json_object_array_add(user_array, user_obj);
 	}
 
