@@ -1036,3 +1036,247 @@ void check_all_users_period_time(void)
 		}
 	}
 }
+
+/* ====================================================================
+ * Per-device time rule
+ * ==================================================================== */
+
+dev_time_rule_node_t *dev_time_rule_table[MAX_DEV_TIME_RULE_HASH_SIZE];
+
+static unsigned int hash_time_rule_mac(const char *mac)
+{
+	unsigned int h = 0;
+	int i;
+
+	if (!mac) {
+		return 0;
+	}
+	for (i = 0; mac[i] != '\0' && i < MAX_MAC_LEN; i++) {
+		char c = mac[i];
+
+		if (c >= 'A' && c <= 'Z')
+			c = (char)(c + ('a' - 'A'));
+		h = h * 31 + (unsigned char)c;
+	}
+	return h & (MAX_DEV_TIME_RULE_HASH_SIZE - 1);
+}
+
+void dev_time_rule_init(void)
+{
+	memset(dev_time_rule_table, 0, sizeof(dev_time_rule_table));
+}
+
+void dev_time_rule_flush(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_DEV_TIME_RULE_HASH_SIZE; i++) {
+		dev_time_rule_node_t *p = dev_time_rule_table[i];
+
+		while (p) {
+			dev_time_rule_node_t *n = p->next;
+
+			free(p);
+			p = n;
+		}
+		dev_time_rule_table[i] = NULL;
+	}
+}
+
+dev_time_rule_node_t *dev_time_rule_find(const char *mac)
+{
+	dev_time_rule_node_t *p;
+	unsigned int h;
+
+	if (!mac) {
+		return NULL;
+	}
+	h = hash_time_rule_mac(mac);
+	for (p = dev_time_rule_table[h]; p; p = p->next) {
+		if (strcasecmp(p->mac, mac) == 0)
+			return p;
+	}
+	return NULL;
+}
+
+void dev_time_rule_set(const char *mac, const dev_time_rule_t *rule)
+{
+	dev_time_rule_node_t *n;
+	unsigned int h;
+
+	if (!mac || !rule)
+		return;
+
+	n = dev_time_rule_find(mac);
+	if (!n) {
+		n = (dev_time_rule_node_t *)calloc(1, sizeof(*n));
+		if (!n)
+			return;
+		mac_copy_lower(n->mac, mac, sizeof(n->mac));
+		h = hash_time_rule_mac(mac);
+		n->next = dev_time_rule_table[h];
+		dev_time_rule_table[h] = n;
+	}
+	n->rule = *rule;
+}
+
+void dev_time_rule_del(const char *mac)
+{
+	dev_time_rule_node_t **pp;
+	unsigned int h;
+
+	if (!mac)
+		return;
+	h = hash_time_rule_mac(mac);
+	pp = &dev_time_rule_table[h];
+	while (*pp) {
+		if (strcasecmp((*pp)->mac, mac) == 0) {
+			dev_time_rule_node_t *t = *pp;
+
+			*pp = t->next;
+			free(t);
+			return;
+		}
+		pp = &(*pp)->next;
+	}
+}
+
+void load_dev_time_rules_from_uci(void)
+{
+	struct uci_context *ctx;
+	int num, i;
+
+	dev_time_rule_flush();
+	ctx = uci_alloc_context();
+	if (!ctx) {
+		LOG_ERROR("load_dev_time_rules_from_uci: uci ctx fail\n");
+		return;
+	}
+
+	num = af_get_uci_list_num(ctx, "appfilter", "af_user");
+	for (i = 0; i < num; i++) {
+		char mac[32] = {0}, mode_s[8] = {0};
+		char start_s[16] = {0}, end_s[16] = {0};
+		char key[128];
+		dev_time_rule_t rule;
+		int sh = 0, sm = 0, eh = 23, em = 59;
+
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].mac", i);
+		af_uci_get_value(ctx, key, mac, sizeof(mac));
+		if (strlen(mac) < 11)
+			continue;
+
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_mode", i);
+		af_uci_get_value(ctx, key, mode_s, sizeof(mode_s));
+
+		memset(&rule, 0, sizeof(rule));
+		rule.mode = atoi(mode_s);
+		if (rule.mode != 1) {
+			dev_time_rule_set(mac, &rule);
+			continue;
+		}
+
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_start", i);
+		af_uci_get_value(ctx, key, start_s, sizeof(start_s));
+		snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_end", i);
+		af_uci_get_value(ctx, key, end_s, sizeof(end_s));
+
+		if (sscanf(start_s, "%d:%d", &sh, &sm) != 2) {
+			sh = 0;
+			sm = 0;
+		}
+		if (sscanf(end_s, "%d:%d", &eh, &em) != 2) {
+			eh = 23;
+			em = 59;
+		}
+		rule.start_min = sh * 60 + sm;
+		rule.end_min = eh * 60 + em;
+		dev_time_rule_set(mac, &rule);
+	}
+	uci_free_context(ctx);
+}
+
+/* start <  end : same day,        e.g. 11:00-23:00
+ * start >  end : crosses midnight, e.g. 23:00-11:00
+ * start == end : treat as all-day  (defensive) */
+int af_dev_time_in_rule(const dev_time_rule_t *rule, time_t now)
+{
+	struct tm *tm;
+	int cur, start, end;
+
+	if (!rule || rule->mode != 1)
+		return 1;
+	if (rule->start_min == rule->end_min)
+		return 1;
+	if (rule->start_min < 0 || rule->start_min >= 1440
+	    || rule->end_min < 0 || rule->end_min >= 1440)
+		return 1;
+
+	tm = localtime(&now);
+	if (!tm)
+		return 1;
+	cur = tm->tm_hour * 60 + tm->tm_min;
+	start = rule->start_min;
+	end = rule->end_min;
+
+	if (start < end)
+		return cur >= start && cur < end;
+	return cur >= start || cur < end;
+}
+
+void update_time_exempt_macs(void)
+{
+	static char last_json[8192] = {0};
+	static int last_ready = 0;
+	char buf[8192] = {0};
+	int pos = 0, first = 1, ret, i;
+	time_t now = time(NULL);
+	FILE *fp;
+
+	if (!last_ready && access("/dev/appfilter", F_OK) != 0)
+		return;
+	last_ready = 1;
+
+	ret = snprintf(buf, sizeof(buf), "{\"op\":7,\"data\":{\"mac_list\":[");
+	if (ret < 0 || ret >= (int)sizeof(buf))
+		return;
+	pos = ret;
+
+	for (i = 0; i < MAX_DEV_TIME_RULE_HASH_SIZE; i++) {
+		dev_time_rule_node_t *p;
+
+		for (p = dev_time_rule_table[i]; p; p = p->next) {
+			if (p->rule.mode != 1)
+				continue;
+			if (af_dev_time_in_rule(&p->rule, now))
+				continue;
+
+			ret = snprintf(buf + pos, sizeof(buf) - pos,
+				       first ? "\"%s\"" : ",\"%s\"", p->mac);
+			if (ret < 0 || pos + ret >= (int)sizeof(buf)) {
+				LOG_WARN("time-exempt list truncated, skip sync\n");
+				return;
+			}
+			pos += ret;
+			first = 0;
+		}
+	}
+	ret = snprintf(buf + pos, sizeof(buf) - pos, "]}}");
+	if (ret < 0 || pos + ret >= (int)sizeof(buf))
+		return;
+	pos += ret;
+
+	if (strcmp(buf, last_json) == 0)
+		return;
+
+	fp = fopen("/dev/appfilter", "w");
+	if (fp) {
+		fwrite(buf, 1, strlen(buf), fp);
+		fclose(fp);
+		LOG_INFO("sync time-exempt macs: %s\n", buf);
+	} else {
+		LOG_ERROR("open /dev/appfilter failed: %s\n", strerror(errno));
+	}
+	strncpy(last_json, buf, sizeof(last_json) - 1);
+	last_json[sizeof(last_json) - 1] = '\0';
+}
