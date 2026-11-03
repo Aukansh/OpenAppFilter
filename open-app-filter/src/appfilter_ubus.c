@@ -1985,6 +1985,21 @@ static int handle_add_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 		} else {
 			af_uci_set_int_value(uci_ctx, "appfilter.@af_user[-1].time_mode", 1);
 		}
+		struct json_object *start_obj = json_object_object_get(req_obj, "start");
+		struct json_object *end_obj = json_object_object_get(req_obj, "end");
+		const char *s_str = "00:00";
+		const char *e_str = "23:59";
+		
+		if (start_obj) {
+			const char *tmp = json_object_get_string(start_obj);
+			if (tmp && strlen(tmp) > 0) s_str = tmp;
+		}
+		if (end_obj) {
+			const char *tmp = json_object_get_string(end_obj);
+			if (tmp && strlen(tmp) > 0) e_str = tmp;
+		}
+		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].time_start", (char *)s_str);
+		af_uci_set_value(uci_ctx, "appfilter.@af_user[-1].time_end", (char *)e_str);
 	}
 	printf("add af_user ok\n");
 	af_uci_commit(uci_ctx, "appfilter");
