@@ -10,6 +10,7 @@ enum AF_CONFIG_CMD
 	AF_CMD_SET_MAC_LIST,
 	AF_CMD_SET_WHITELIST_MAC_LIST,
 	AF_CMD_SET_BLOCKED_MAC_LIST,
+	AF_CMD_SET_TIME_EXEMPT_MAC_LIST,
 };
 
 typedef int (*af_config_handler_t)(cJSON *data);
