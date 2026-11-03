@@ -305,6 +305,16 @@ void check_user_time_rule_realtime(void)
 		while (node) {
 			int in_time = 0;
 
+			if (!node->is_af_user) {
+				if (node->is_selected) {
+					node->is_selected = 0;
+					node->blocked = 0;
+					changed = 1;
+				}
+				node = node->next;
+				continue;
+			}
+
 			if (node->time_mode == 0 || strlen(node->time_start) == 0 || strlen(node->time_end) == 0) {
 				in_time = 1;
 			} else {
@@ -355,6 +365,7 @@ void update_dev_selected_flag(void)
 			dev_node_t *node = dev_hash_table[i];
 
 			while (node) {
+				node->is_af_user = 0;
 				if (!node->is_whitelist)
 					node->is_selected = 1;
 				node = node->next;
@@ -374,6 +385,16 @@ void update_dev_selected_flag(void)
 		if (!uci_ctx) {
 			LOG_ERROR("Failed to allocate UCI context in update_dev_selected_flag\n");
 			return;
+		}
+
+		for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+			dev_node_t *node = dev_hash_table[i];
+			while (node) {
+				node->is_af_user = 0;
+				node->is_selected = 0;
+				node->blocked = 0;
+				node = node->next;
+			}
 		}
 
 		num = af_get_uci_list_num(uci_ctx, "appfilter", "af_user");
@@ -399,6 +420,7 @@ void update_dev_selected_flag(void)
 				snprintf(key, sizeof(key), "appfilter.@af_user[%d].time_end", i);
 				af_uci_get_value(uci_ctx, key, node->time_end, sizeof(node->time_end));
 				
+				node->is_af_user = 1;
 				node->is_selected = 0;
 			}
 		}
