@@ -55,6 +55,15 @@ typedef struct visit_stat {
 	u_int32_t total_time;
 } visit_stat_t;
 
+typedef struct dev_time_status {
+	int filter;
+	int deny_time;
+	int allow_time;
+	int match_time;
+	int remain_time;
+	int period_blocked;
+} dev_time_status_t;
+
 typedef struct dev_node {
 	char mac[MAX_MAC_LEN];
 	char ip[MAX_IP_LEN];
@@ -79,8 +88,11 @@ typedef struct dev_node {
 	int active;
 	u_int32_t today_am_active_time;
 	u_int32_t today_pm_active_time;
+	u_int32_t last_check_sec;
 	int is_selected;
 	int blocked;
+	char custom_time_json[1024];
+	dev_time_status_t time_status;
 	struct dev_node *next;
 } dev_node_t;
 
