@@ -3,7 +3,7 @@
 
 #include <linux/atomic.h>
 
-#define AF_VERSION "5.3.3"
+#define AF_VERSION "5.3.5"
 #define AF_FEATURE_CONFIG_FILE "/tmp/feature.cfg"
 
 #define MAX_DPI_PKT_NUM 256

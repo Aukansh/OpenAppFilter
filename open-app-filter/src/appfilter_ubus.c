@@ -1434,6 +1434,22 @@ static int handle_get_app_filter_time(struct ubus_context *ctx,
 				       json_object_new_int(daily_limit->enable));
 	}
 
+	if (time_mode == 3) {
+		struct json_object *dev_list = json_object_new_array();
+		int i;
+		for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+			dev_node_t *node = dev_hash_table[i];
+			while (node) {
+				if (node->is_selected && strlen(node->custom_time_json) > 0) {
+					struct json_object *dev_obj = json_tokener_parse(node->custom_time_json);
+					if (dev_obj) json_object_array_add(dev_list, dev_obj);
+				}
+				node = node->next;
+			}
+		}
+		json_object_object_add(data_obj, "device_time_list", dev_list);
+	}
+
 	json_object_object_add(response, "data", data_obj);
 	printf("response_json: %s\n", json_object_to_json_string(response));
 	reply_json(ctx, req, response);
@@ -1684,6 +1700,37 @@ static int handle_set_app_filter_time(struct ubus_context *ctx,
 		ret = apply_dynamic_mode(uci_ctx, req_obj);
 	else if (mode == 2)
 		ret = apply_daily_mode(uci_ctx, req_obj);
+	else if (mode == 3) {
+		struct json_object *dev_list_obj = json_object_object_get(req_obj, "device_time_list");
+		if (dev_list_obj && json_object_is_type(dev_list_obj, json_type_array)) {
+			int len = json_object_array_length(dev_list_obj);
+			int num_users = af_get_uci_list_num(uci_ctx, "appfilter", "af_user");
+			for (int i = 0; i < len; i++) {
+				struct json_object *dev_obj = json_object_array_get_idx(dev_list_obj, i);
+				struct json_object *mac_obj = json_object_object_get(dev_obj, "mac");
+				if (!mac_obj) continue;
+
+				char mac[32] = {0};
+				char uci_key[128] = {0};
+				mac_copy_lower(mac, json_object_get_string(mac_obj), sizeof(mac));
+
+				for (int j = 0; j < num_users; j++) {
+					char uci_mac[32] = {0};
+					af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].mac", j, uci_mac, sizeof(uci_mac));
+					if (strcasecmp(uci_mac, mac) == 0) {
+						snprintf(uci_key, sizeof(uci_key), "appfilter.@af_user[%d].custom_time", j);
+						af_uci_set_value(uci_ctx, uci_key, json_object_to_json_string(dev_obj));
+						dev_node_t *node = find_dev_node(mac);
+						if (node) {
+							strncpy(node->custom_time_json, json_object_to_json_string(dev_obj), sizeof(node->custom_time_json) - 1);
+						}
+						break;
+					}
+				}
+			}
+			ret = 0;
+		}
+	}
 
 	if (ret < 0)
 		goto done;

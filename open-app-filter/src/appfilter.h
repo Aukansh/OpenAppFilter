@@ -10,7 +10,7 @@
 #include "utils.h"
 
 #define LOG_FILE_PATH			"/tmp/log/appfilter.log"
-#define OAF_VERSION			"6.1.8"
+#define OAF_VERSION			"6.2.0"
 #define AF_CMD_SET_BLOCKED_MAC_LIST	6
 
 #define MAX_TIME_LIST_LEN		1024
