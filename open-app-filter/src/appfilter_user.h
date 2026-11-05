@@ -62,6 +62,7 @@ typedef struct dev_time_status {
 	int match_time;
 	int remain_time;
 	int period_blocked;
+	unsigned int last_calc_sec;
 } dev_time_status_t;
 
 typedef struct dev_node {

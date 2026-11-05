@@ -982,15 +982,19 @@ static void force_disconnect_tick(int trigger)
 	case FD_STATE_WAIT:
 		now = time(NULL);
 		if (now - g_fd_start >= FORCE_DISCONNECT_HOLD_SECS) {
-			update_oaf_proc_value("app_filter_mode", "0");
 			g_force_disconnect_hold = 0;
+			if (g_af_config.time.time_mode == 3) {
+				update_oaf_proc_value("app_filter_mode", "1");
+			} else {
+				update_oaf_proc_value("app_filter_mode", 
+					g_af_config.global.app_filter_mode == 1 ? "1" : "0");
+			}
 			g_fd_state = FD_STATE_IDLE;
-			LOG_INFO("force_disconnect: restored specified-apps mode\n");
+			LOG_INFO("force_disconnect: restored correct app_filter_mode\n");
 		}
 		return;
 	}
 }
-
 
 static int calc_device_fixed(struct json_object *jobj, struct tm *cur_tm)
 {
@@ -999,6 +1003,7 @@ static int calc_device_fixed(struct json_object *jobj, struct tm *cur_tm)
 
 	int cur_min = cur_tm->tm_hour * 60 + cur_tm->tm_min;
 	int cur_wday = cur_tm->tm_wday;
+	int yesterday = (cur_wday + 6) % 7;
 	int len = json_object_array_length(list_obj);
 
 	for (int i = 0; i < len; i++) {
@@ -1009,20 +1014,32 @@ static int calc_device_fixed(struct json_object *jobj, struct tm *cur_tm)
 
 		if (!start_obj || !end_obj || !wd_obj) continue;
 
-		int match_day = 0;
+		int match_today = 0;
+		int match_yesterday = 0;
 		for (int j = 0; j < json_object_array_length(wd_obj); j++) {
-			if (json_object_get_int(json_object_array_get_idx(wd_obj, j)) == cur_wday) {
-				match_day = 1; break;
-			}
+			int d = json_object_get_int(json_object_array_get_idx(wd_obj, j));
+			if (d == cur_wday) match_today = 1;
+			if (d == yesterday) match_yesterday = 1;
 		}
-		if (!match_day) continue;
 		
 		int sh = 0, sm = 0, eh = 0, em = 0;
 		sscanf(json_object_get_string(start_obj), "%d:%d", &sh, &sm);
 		sscanf(json_object_get_string(end_obj), "%d:%d", &eh, &em);
 
-		if (cur_min >= sh * 60 + sm && cur_min <= eh * 60 + em) {
-			return 1;
+		int s_min = sh * 60 + sm;
+		int e_min = eh * 60 + em;
+
+		if (s_min <= e_min) {
+			if (match_today && cur_min >= s_min && cur_min <= e_min) {
+				return 1;
+			}
+		} else {
+			if (match_today && cur_min >= s_min) {
+				return 1;
+			}
+			if (match_yesterday && cur_min <= e_min) {
+				return 1;
+			}
 		}
 	}
 	return 0;
@@ -1081,22 +1098,30 @@ static int calc_device_dynamic(struct json_object *jobj, dev_node_t *node, struc
 		node->time_status.deny_time = 0;
 		node->time_status.allow_time = 0;
 		node->time_status.match_time = 1;
+		node->time_status.last_calc_sec = get_timestamp();
 	}
 
-	int step = 10;
-	if (node->time_status.filter == 1) {
-		node->time_status.deny_time += step;
-		if (node->time_status.deny_time >= deny_limit) {
-			node->time_status.filter = 0;
-			node->time_status.deny_time = 0;
-			node->time_status.allow_time = 0;
-		}
-	} else {
-		node->time_status.allow_time += step;
-		if (node->time_status.allow_time >= allow_limit) {
-			node->time_status.filter = 1;
-			node->time_status.allow_time = 0;
-			node->time_status.deny_time = 0;
+	unsigned int now = get_timestamp();
+	int delta = (int)(now - node->time_status.last_calc_sec);
+
+	if (delta < 0) delta = 0;
+	node->time_status.last_calc_sec = now;
+
+	if (delta > 0) {
+		if (node->time_status.filter == 1) {
+			node->time_status.deny_time += delta;
+			if (node->time_status.deny_time >= deny_limit) {
+				node->time_status.filter = 0;
+				node->time_status.deny_time = 0;
+				node->time_status.allow_time = 0;
+			}
+		} else {
+			node->time_status.allow_time += delta;
+			if (node->time_status.allow_time >= allow_limit) {
+				node->time_status.filter = 1;
+				node->time_status.allow_time = 0;
+				node->time_status.deny_time = 0;
+			}
 		}
 	}
 	return node->time_status.filter;
@@ -1369,9 +1394,12 @@ static void oaf_timeout_handler(struct uloop_timeout *t)
 
 	force_disconnect_tick(0);
 
+	if (count % 5 == 0) {
+		update_oaf_status();
+	}
+
 	if (count % 10 == 0) {
 		update_dev_list();
-		update_oaf_status();
 		check_all_users_period_time();
 	}
 
@@ -1380,7 +1408,6 @@ static void oaf_timeout_handler(struct uloop_timeout *t)
 		check_dev_visit_info_expire();
 		flush_expire_visit_info();
 		update_dynamic_used_time(&g_af_config.time);
-		update_oaf_status();
 		update_lan_ip();
 		update_dev_selected_flag();
 		if (check_dev_expire())

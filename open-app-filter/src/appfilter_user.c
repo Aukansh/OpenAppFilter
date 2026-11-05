@@ -844,6 +844,7 @@ void reset_all_users_today_active_time(void)
 			node->today_pm_active_time = 0;
 			node->last_up_bytes = node->today_up_bytes;
 			node->last_down_bytes = node->today_down_bytes;
+			memset(&node->time_status, 0, sizeof(node->time_status));
 			node->last_check_sec = now;
 			node = node->next;
 		}
@@ -878,6 +879,7 @@ void reset_user_today_active_time(const char *mac)
 	node->today_am_active_time = 0;
 	node->today_pm_active_time = 0;
 	node->blocked = 0;
+	memset(&node->time_status, 0, sizeof(node->time_status));
 	node->last_check_sec = get_timestamp();
 	sync_blocked_macs_to_kernel();
 }
