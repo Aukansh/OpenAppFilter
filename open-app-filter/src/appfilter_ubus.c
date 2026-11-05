@@ -1842,6 +1842,21 @@ static void all_users_callback(void *arg, dev_node_t *dev)
 		json_object_object_add(user_obj, "today_down_flow",
 				       json_object_new_int64((int64_t)(dev->today_down_bytes / 1024)));
 	}
+
+	if (g_af_config.time.time_mode == 3 && strlen(dev->custom_time_json) > 0) {
+		struct json_object *jobj = json_tokener_parse(dev->custom_time_json);
+		if (jobj) {
+			struct json_object *mode_obj = json_object_object_get(jobj, "mode");
+			int dev_mode = mode_obj ? json_object_get_int(mode_obj) : -1;
+			if (dev_mode == 1) {
+				json_object_object_add(user_obj, "dyn_filter", json_object_new_int(dev->time_status.filter));
+				json_object_object_add(user_obj, "dyn_deny_time", json_object_new_int(dev->time_status.deny_time));
+				json_object_object_add(user_obj, "dyn_allow_time", json_object_new_int(dev->time_status.allow_time));
+				json_object_object_add(user_obj, "dyn_match_time", json_object_new_int(dev->time_status.match_time));
+			}
+			json_object_put(jobj);
+		}
+	}
 	json_object_array_add(users_array, user_obj);
 }
 
