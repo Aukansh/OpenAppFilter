@@ -30,6 +30,7 @@ THE SOFTWARE.
 #include <time.h>
 #include <unistd.h>
 
+#include <json-c/json.h>
 #include <libubox/uloop.h>
 #include <libubox/utils.h>
 #include <libubus.h>
@@ -990,6 +991,140 @@ static void force_disconnect_tick(int trigger)
 	}
 }
 
+
+static int calc_device_fixed(struct json_object *jobj, struct tm *cur_tm)
+{
+	struct json_object *list_obj = json_object_object_get(jobj, "time_list");
+	if (!list_obj || !json_object_is_type(list_obj, json_type_array)) return 0;
+
+	int cur_min = cur_tm->tm_hour * 60 + cur_tm->tm_min;
+	int cur_wday = cur_tm->tm_wday;
+	int len = json_object_array_length(list_obj);
+
+	for (int i = 0; i < len; i++) {
+		struct json_object *item = json_object_array_get_idx(list_obj, i);
+		struct json_object *start_obj = json_object_object_get(item, "start");
+		struct json_object *end_obj = json_object_object_get(item, "end");
+		struct json_object *wd_obj = json_object_object_get(item, "weekday_list");
+
+		if (!start_obj || !end_obj || !wd_obj) continue;
+
+		int match_day = 0;
+		for (int j = 0; j < json_object_array_length(wd_obj); j++) {
+			if (json_object_get_int(json_object_array_get_idx(wd_obj, j)) == cur_wday) {
+				match_day = 1; break;
+			}
+		}
+		if (!match_day) continue;
+		
+		int sh = 0, sm = 0, eh = 0, em = 0;
+		sscanf(json_object_get_string(start_obj), "%d:%d", &sh, &sm);
+		sscanf(json_object_get_string(end_obj), "%d:%d", &eh, &em);
+
+		if (cur_min >= sh * 60 + sm && cur_min <= eh * 60 + em) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int calc_device_dynamic(struct json_object *jobj, dev_node_t *node, struct tm *cur_tm)
+{
+	struct json_object *allow_obj = json_object_object_get(jobj, "allow_time");
+	struct json_object *deny_obj = json_object_object_get(jobj, "deny_time");
+	if (!allow_obj || !deny_obj) return 0;
+
+	int allow_limit = json_object_get_int(allow_obj) * 60;
+	int deny_limit = json_object_get_int(deny_obj) * 60;
+	int in_range = 0;
+	int cur_min = cur_tm->tm_hour * 60 + cur_tm->tm_min;
+	int cur_wday = cur_tm->tm_wday;
+
+	struct json_object *wd_obj = json_object_object_get(jobj, "weekday_list");
+	if (wd_obj && json_object_array_length(wd_obj) > 0) {
+		for (int j = 0; j < json_object_array_length(wd_obj); j++) {
+			if (json_object_get_int(json_object_array_get_idx(wd_obj, j)) == cur_wday) {
+				in_range = 1; break;
+			}
+		}
+	} else {
+		in_range = 1;
+	}
+
+	if (in_range) {
+		struct json_object *start_obj = json_object_object_get(jobj, "start_time");
+		struct json_object *end_obj = json_object_object_get(jobj, "end_time");
+		if (start_obj && end_obj) {
+			int sh = 0, sm = 0, eh = 23, em = 59;
+			sscanf(json_object_get_string(start_obj), "%d:%d", &sh, &sm);
+			sscanf(json_object_get_string(end_obj), "%d:%d", &eh, &em);
+			int s_min = sh * 60 + sm;
+			int e_min = eh * 60 + em;
+			if (s_min <= e_min) {
+				in_range = (cur_min >= s_min && cur_min <= e_min);
+			} else {
+				in_range = (cur_min >= s_min || cur_min <= e_min);
+			}
+		}
+	}
+
+	if (!in_range) {
+		node->time_status.match_time = 0;
+		node->time_status.filter = 0;
+		node->time_status.deny_time = 0;
+		node->time_status.allow_time = 0;
+		return 0;
+	}
+
+	if (node->time_status.match_time == 0) {
+		node->time_status.filter = 1;
+		node->time_status.deny_time = 0;
+		node->time_status.allow_time = 0;
+		node->time_status.match_time = 1;
+	}
+
+	int step = 10;
+	if (node->time_status.filter == 1) {
+		node->time_status.deny_time += step;
+		if (node->time_status.deny_time >= deny_limit) {
+			node->time_status.filter = 0;
+			node->time_status.deny_time = 0;
+			node->time_status.allow_time = 0;
+		}
+	} else {
+		node->time_status.allow_time += step;
+		if (node->time_status.allow_time >= allow_limit) {
+			node->time_status.filter = 1;
+			node->time_status.allow_time = 0;
+			node->time_status.deny_time = 0;
+		}
+	}
+	return node->time_status.filter;
+}
+
+static int calc_device_daily(struct json_object *jobj, dev_node_t *node, struct tm *cur_tm)
+{
+	struct json_object *list_obj = json_object_object_get(jobj, "daily_time_list");
+	if (!list_obj || json_object_array_length(list_obj) != 7) return 0;
+
+	struct json_object *day_obj = json_object_array_get_idx(list_obj, cur_tm->tm_wday);
+	if (!day_obj) return 0;
+
+	struct json_object *enable_obj = json_object_object_get(day_obj, "enable");
+	if (!enable_obj || json_object_get_int(enable_obj) != 1) return 0;
+
+	int is_morning = (cur_tm->tm_hour < 12);
+	struct json_object *limit_obj = json_object_object_get(day_obj, is_morning ? "am_time" : "pm_time");
+	if (!limit_obj) return 0;
+
+	int limit = json_object_get_int(limit_obj);
+	if (limit == -1) return 1;
+	if (limit <= 0) return 0;
+
+	int used = is_morning ? node->today_am_active_time : node->today_pm_active_time;
+	return (used >= limit) ? 1 : 0;
+}
+
 /* -------------------------------------------------------------------------
  * Runtime status sync
  * ---------------------------------------------------------------------- */
@@ -1003,7 +1138,55 @@ static void update_oaf_status(void)
 	int ret = 0;
 	int i;
 
-	if (g_af_config.global.enable == 1)
+	if (g_af_config.global.enable == 1) {
+		update_oaf_proc_value("enable", "1");
+	} else {
+		update_oaf_proc_value("enable", "0");
+	}
+
+	if (g_af_config.time.time_mode == 3) {
+		time_t now = time(NULL);
+		struct tm *cur_tm = localtime(&now);
+		static int last_mode3_blocked = 0;
+		int cur_mode3_blocked = 0;
+
+		for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
+			dev_node_t *node = dev_hash_table[i];
+			while (node) {
+				if (!node->is_selected || strlen(node->custom_time_json) == 0) {
+					node->blocked = 0;
+					node = node->next;
+					continue;
+				}
+
+				struct json_object *jobj = json_tokener_parse(node->custom_time_json);
+				if (jobj) {
+					struct json_object *mode_obj = json_object_object_get(jobj, "mode");
+					int dev_mode = mode_obj ? json_object_get_int(mode_obj) : -1;
+
+					if (dev_mode == 0) node->blocked = calc_device_fixed(jobj, cur_tm);
+					else if (dev_mode == 1) node->blocked = calc_device_dynamic(jobj, node, cur_tm);
+					else if (dev_mode == 2) node->blocked = calc_device_daily(jobj, node, cur_tm);
+
+					json_object_put(jobj);
+				}
+				if (node->is_selected && node->blocked) {
+					cur_mode3_blocked++;
+				}
+				node = node->next;
+			}
+		}
+		sync_blocked_macs_to_kernel();
+
+		if (cur_mode3_blocked > last_mode3_blocked) {
+			force_disconnect_tick(1);
+		}
+		last_mode3_blocked = cur_mode3_blocked;
+
+		return;
+	}
+
+	if (g_af_config.global.enable == 1 && g_af_config.time.time_mode != 3)
 		ret = af_check_time_valid(&g_af_config.time);
 
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
@@ -1052,12 +1235,20 @@ static void update_oaf_app_filter_mode_status(void)
 		LOG_DEBUG("skip app_filter_mode update during hold\n");
 		return;
 	}
+	if (g_af_config.time.time_mode == 3) {
+		update_oaf_proc_value("app_filter_mode", "1");
+		return;
+	}
 	update_oaf_proc_value("app_filter_mode",
 			      g_af_config.global.app_filter_mode == 1 ? "1" : "0");
 }
 
 static void update_oaf_daily_limit_mode_status(void)
 {
+	if (g_af_config.time.time_mode == 3) {
+		update_oaf_proc_value("daily_limit_mode", "1");
+		return;
+	}
 	update_oaf_proc_value("daily_limit_mode",
 			      g_af_config.global.daily_limit_mode == 1 ? "1" : "0");
 }
