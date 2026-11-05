@@ -649,6 +649,26 @@ void update_dev_visiting_info(void)
 	fclose(fp);
 }
 
+void update_dev_custom_time(void)
+{
+	struct uci_context *ctx = uci_alloc_context();
+	if (!ctx) return;
+
+	int num = af_get_uci_list_num(ctx, "appfilter", "af_user");
+	for (int i = 0; i < num; i++) {
+		char mac[32] = {0};
+		char time_cfg[1024] = {0};
+		af_uci_get_array_value(ctx, "appfilter.@af_user[%d].mac", i, mac, sizeof(mac));
+		af_uci_get_array_value(ctx, "appfilter.@af_user[%d].custom_time", i, time_cfg, sizeof(time_cfg));
+		
+		dev_node_t *node = find_dev_node(mac);
+		if (node) {
+			strncpy(node->custom_time_json, time_cfg, sizeof(node->custom_time_json) - 1);
+		}
+	}
+	uci_free_context(ctx);
+}
+
 void update_dev_list(void)
 {
 	clean_dev_online_status();
@@ -657,7 +677,9 @@ void update_dev_list(void)
 	update_dev_online_status();
 	update_dev_visiting_info();
 	update_dev_selected_flag();
+	update_dev_custom_time();
 }
+
 
 void check_dev_visit_info_expire(void)
 {
@@ -809,6 +831,7 @@ void clear_device_app_statistics(void)
 void reset_all_users_today_active_time(void)
 {
 	int i;
+	unsigned int now = get_timestamp();
 
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *node = dev_hash_table[i];
@@ -821,6 +844,7 @@ void reset_all_users_today_active_time(void)
 			node->today_pm_active_time = 0;
 			node->last_up_bytes = node->today_up_bytes;
 			node->last_down_bytes = node->today_down_bytes;
+			node->last_check_sec = now;
 			node = node->next;
 		}
 	}
@@ -854,6 +878,7 @@ void reset_user_today_active_time(const char *mac)
 	node->today_am_active_time = 0;
 	node->today_pm_active_time = 0;
 	node->blocked = 0;
+	node->last_check_sec = get_timestamp();
 	sync_blocked_macs_to_kernel();
 }
 
@@ -876,51 +901,58 @@ void reset_all_users_today_flow(void)
 
 void check_all_users_period_time(void)
 {
-	static time_t last_run;
-	time_t now = time(NULL);
+	unsigned int now = get_timestamp();
 	struct tm *tm;
-	int minutes, i;
+	int i;
+	time_t t = now;
 
-	if (last_run == 0) {
-		last_run = now;
-		for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
-			dev_node_t *node = dev_hash_table[i];
-
-			while (node) {
-				node->last_up_bytes = node->today_up_bytes;
-				node->last_down_bytes = node->today_down_bytes;
-				node = node->next;
-			}
-		}
-		return;
-	}
-
-	minutes = (now - last_run) / 60;
-	if (minutes <= 0)
-		return;
-	last_run += minutes * 60;
-
-	tm = localtime(&now);
+	tm = localtime(&t);
 	for (i = 0; i < MAX_DEV_NODE_HASH_SIZE; i++) {
 		dev_node_t *node = dev_hash_table[i];
 
 		while (node) {
-			int active = (node->today_up_bytes > node->last_up_bytes) ||
-				     (node->today_down_bytes > node->last_down_bytes);
+			int sec_diff;
+			int minutes;
+			int active;
 
-			node->last_up_bytes = node->today_up_bytes;
-			node->last_down_bytes = node->today_down_bytes;
+			if (node->last_check_sec == 0) {
+				node->last_check_sec = now;
+				node->last_up_bytes = node->today_up_bytes;
+				node->last_down_bytes = node->today_down_bytes;
+				node = node->next;
+				continue;
+			}
 
-			if (node->online && node->is_selected &&
-			    (active || node->active)) {
-				if (tm->tm_hour < 12)
-					node->today_am_active_time += minutes;
-				else
-					node->today_pm_active_time += minutes;
-				LOG_DEBUG("period_time %s elapsed=%d am=%u pm=%u\n",
-					  node->mac, minutes,
-					  node->today_am_active_time,
-					  node->today_pm_active_time);
+			sec_diff = (int)(now - node->last_check_sec);
+			if (sec_diff < 0) {
+				node->last_check_sec = now;
+				node->last_up_bytes = node->today_up_bytes;
+				node->last_down_bytes = node->today_down_bytes;
+				node = node->next;
+				continue;
+			}
+
+			minutes = sec_diff / 60;
+			if (minutes > 0) {
+				active = (node->today_up_bytes > node->last_up_bytes) ||
+					 (node->today_down_bytes > node->last_down_bytes);
+
+				node->last_up_bytes = node->today_up_bytes;
+				node->last_down_bytes = node->today_down_bytes;
+
+				if (node->online && node->is_selected &&
+				    (active || node->active)) {
+					if (tm->tm_hour < 12)
+						node->today_am_active_time += minutes;
+					else
+						node->today_pm_active_time += minutes;
+					LOG_DEBUG("period_time %s elapsed=%d am=%u pm=%u\n",
+						  node->mac, minutes,
+						  node->today_am_active_time,
+						  node->today_pm_active_time);
+				}
+
+				node->last_check_sec += minutes * 60;
 			}
 			node = node->next;
 		}
