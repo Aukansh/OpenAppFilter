@@ -17,7 +17,6 @@ typedef enum {
 
 typedef struct {
 	struct hlist_node node;
-	struct list_head lru_list;
 	u32 src_ip;
 	u32 dst_ip;
 	u16 src_port;
