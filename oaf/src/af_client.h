@@ -67,6 +67,7 @@ typedef struct af_client_info
 	struct in6_addr ipv6;
 	unsigned long create_jiffies;
 	unsigned long update_jiffies;
+	int deleted;
 	flow_stat_t flow;
 	flow_stat_t last_flow;
 	flow_stat_t period_flow; 
