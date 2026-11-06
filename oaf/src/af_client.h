@@ -61,7 +61,6 @@ typedef struct visiting_info{
 typedef struct af_client_info
 {
 	struct list_head hlist;
-	struct hlist_node ip_node;
 	unsigned char mac[MAC_ADDR_LEN];
 	unsigned int ip;
 	struct in6_addr ipv6;
