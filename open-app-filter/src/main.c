@@ -1179,21 +1179,19 @@ static void update_oaf_status(void)
 			dev_node_t *node = dev_hash_table[i];
 			while (node) {
 				if (!node->is_selected || strlen(node->custom_time_json) == 0) {
-					node->blocked = 0;
-					node = node->next;
-					continue;
-				}
+					node->blocked = node->is_selected ? 1 : 0;
+				} else {
+					struct json_object *jobj = json_tokener_parse(node->custom_time_json);
+					if (jobj) {
+						struct json_object *mode_obj = json_object_object_get(jobj, "mode");
+						int dev_mode = mode_obj ? json_object_get_int(mode_obj) : -1;
 
-				struct json_object *jobj = json_tokener_parse(node->custom_time_json);
-				if (jobj) {
-					struct json_object *mode_obj = json_object_object_get(jobj, "mode");
-					int dev_mode = mode_obj ? json_object_get_int(mode_obj) : -1;
+						if (dev_mode == 0) node->blocked = calc_device_fixed(jobj, cur_tm);
+						else if (dev_mode == 1) node->blocked = calc_device_dynamic(jobj, node, cur_tm);
+						else if (dev_mode == 2) node->blocked = calc_device_daily(jobj, node, cur_tm);
 
-					if (dev_mode == 0) node->blocked = calc_device_fixed(jobj, cur_tm);
-					else if (dev_mode == 1) node->blocked = calc_device_dynamic(jobj, node, cur_tm);
-					else if (dev_mode == 2) node->blocked = calc_device_daily(jobj, node, cur_tm);
-
-					json_object_put(jobj);
+						json_object_put(jobj);
+					}
 				}
 				if (node->is_selected && node->blocked) {
 					cur_mode3_blocked++;
