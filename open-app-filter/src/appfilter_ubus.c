@@ -1701,31 +1701,31 @@ static int handle_set_app_filter_time(struct ubus_context *ctx,
 	else if (mode == 2)
 		ret = apply_daily_mode(uci_ctx, req_obj);
 	else if (mode == 3) {
+		int num_old = af_get_uci_list_num(uci_ctx, "appfilter", "device_time");
+		for (int k = num_old - 1; k >= 0; k--) {
+			char buf[128];
+			snprintf(buf, sizeof(buf), "appfilter.@device_time[%d]", k);
+			af_uci_delete(uci_ctx, buf);
+		}
+
 		struct json_object *dev_list_obj = json_object_object_get(req_obj, "device_time_list");
 		if (dev_list_obj && json_object_is_type(dev_list_obj, json_type_array)) {
 			int len = json_object_array_length(dev_list_obj);
-			int num_users = af_get_uci_list_num(uci_ctx, "appfilter", "af_user");
 			for (int i = 0; i < len; i++) {
 				struct json_object *dev_obj = json_object_array_get_idx(dev_list_obj, i);
 				struct json_object *mac_obj = json_object_object_get(dev_obj, "mac");
 				if (!mac_obj) continue;
 
 				char mac[32] = {0};
-				char uci_key[128] = {0};
 				mac_copy_lower(mac, json_object_get_string(mac_obj), sizeof(mac));
 
-				for (int j = 0; j < num_users; j++) {
-					char uci_mac[32] = {0};
-					af_uci_get_array_value(uci_ctx, "appfilter.@af_user[%d].mac", j, uci_mac, sizeof(uci_mac));
-					if (strcasecmp(uci_mac, mac) == 0) {
-						snprintf(uci_key, sizeof(uci_key), "appfilter.@af_user[%d].custom_time", j);
-						af_uci_set_value(uci_ctx, uci_key, json_object_to_json_string(dev_obj));
-						dev_node_t *node = find_dev_node(mac);
-						if (node) {
-							strncpy(node->custom_time_json, json_object_to_json_string(dev_obj), sizeof(node->custom_time_json) - 1);
-						}
-						break;
-					}
+				af_uci_add_section(uci_ctx, "appfilter", "device_time");
+				af_uci_set_value(uci_ctx, "appfilter.@device_time[-1].mac", mac);
+				af_uci_set_value(uci_ctx, "appfilter.@device_time[-1].data", json_object_to_json_string(dev_obj));
+
+				dev_node_t *node = find_dev_node(mac);
+				if (node) {
+					strncpy(node->custom_time_json, json_object_to_json_string(dev_obj), sizeof(node->custom_time_json) - 1);
 				}
 			}
 			ret = 0;
