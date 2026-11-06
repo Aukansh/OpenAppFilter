@@ -66,6 +66,7 @@ nf_client_list_clear(void)
 		while (!list_empty(&af_client_list_table[i])) {
 			p = list_first_entry(&af_client_list_table[i], af_client_info_t, hlist);
 			list_del(&(p->hlist));
+			p->deleted = 1;
 			list_add_tail(&(p->hlist), &pending);
 		}
 	}
@@ -214,6 +215,7 @@ void check_client_expire(void)
 		}
 	}
 	if (victim) {
+		victim->deleted = 1;
 		list_del(&(victim->hlist));
 		if (!hlist_unhashed(&victim->ip_node)) {
 			hlist_del_init(&victim->ip_node);
@@ -581,7 +583,7 @@ static void client_timer_handler(unsigned long data)
 	}
 
 	AF_CLIENT_LOCK_W();
-	if (!find_af_client(client->mac)) {
+	if (client->deleted || !find_af_client(client->mac)) {
 		AF_CLIENT_UNLOCK_W();
 		return;
 	}
@@ -593,8 +595,8 @@ static void client_timer_handler(unsigned long data)
 
 	af_update_client_status(client);
 	client->timer_count++;
+	mod_timer(&client->client_timer, jiffies + HZ * 2);
 	AF_CLIENT_UNLOCK_W();
-	mod_timer(&client->client_timer, jiffies + HZ * 2); 
 }
 
  void init_client_timer(af_client_info_t *client)
