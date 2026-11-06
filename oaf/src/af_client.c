@@ -33,6 +33,7 @@ DEFINE_RWLOCK(af_client_lock);
 
 u32 total_client = 0;
 struct list_head af_client_list_table[MAX_AF_CLIENT_HASH_SIZE];
+struct list_head af_client_ip_table[MAX_AF_CLIENT_HASH_SIZE];
 
 static void init_client_timer(af_client_info_t *client);
 static void stop_client_timer(af_client_info_t *client);
@@ -45,6 +46,7 @@ nf_client_list_init(void)
 	AF_CLIENT_LOCK_W();
 	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
 		INIT_LIST_HEAD(&af_client_list_table[i]);
+		INIT_LIST_HEAD(&af_client_ip_table[i]);
 	}
 	AF_CLIENT_UNLOCK_W();
 	AF_INFO("client list init......ok\n");
@@ -133,14 +135,12 @@ af_client_info_t *find_and_add_af_client(unsigned char *mac)
 af_client_info_t *find_af_client_by_ip(unsigned int ip)
 {
 	af_client_info_t *node;
-	int i;
+	unsigned int hash = (ip ^ (ip >> 16)) & (MAX_AF_CLIENT_HASH_SIZE - 1);
 
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
-		list_for_each_entry(node, &af_client_list_table[i], hlist) {
-			if (node->ip == ip) {
-				AF_LMT_DEBUG("match node->ip=%pI4, ip=%pI4\n", &node->ip, &ip);
-				return node;
-			}
+	list_for_each_entry(node, &af_client_ip_table[hash], ip_list) {
+		if (node->ip == ip) {
+			AF_LMT_DEBUG("match node->ip=%pI4, ip=%pI4\n", &node->ip, &ip);
+			return node;
 		}
 	}
 	return NULL;
@@ -178,6 +178,7 @@ nf_client_add(unsigned char *mac)
 
 	node->create_jiffies = jiffies;
 	node->update_jiffies = jiffies;
+	INIT_LIST_HEAD(&node->ip_list);
 	index = get_mac_hash_code(mac);
 
 	AF_LMT_INFO("new client mac=" MAC_FMT "\n", MAC_ARRAY(node->mac));
@@ -235,7 +236,7 @@ static void flush_expired_visit_info(af_client_info_t *node)
 	cur_timep = af_get_timestamp_sec();
 	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
 		if (node->visit_info[i].app_id == 0) {
-			return;
+			continue;
 		}
 	}
 	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
@@ -432,7 +433,12 @@ static u_int32_t af_client_hook(unsigned int hook, struct sk_buff *skb,
 			if (iph && nfc->ip != iph->saddr) {
 				AF_DEBUG("update node " MAC_FMT " ipv4 %pI4--->%pI4\n", 
 					MAC_ARRAY(nfc->mac), &nfc->ip, &iph->saddr);
+				if (nfc->ip != 0) {
+					list_del(&nfc->ip_list);
+				}
 				nfc->ip = iph->saddr;
+				unsigned int hash = (nfc->ip ^ (nfc->ip >> 16)) & (MAX_AF_CLIENT_HASH_SIZE - 1);
+				list_add(&nfc->ip_list, &af_client_ip_table[hash]);
 			}
 		} else if (skb->protocol == htons(ETH_P_IPV6)) {
 			ip6h = ipv6_hdr(skb);

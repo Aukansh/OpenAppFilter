@@ -292,11 +292,13 @@ void update_dev_selected_flag(void)
 			dev_node_t *node;
 			int in_time = 1;
 
-			af_uci_get_array_value(ctx, "appfilter.@af_user[%d].mac", i,
-					       mac, sizeof(mac));
+			af_uci_get_array_value(ctx, "appfilter.@af_user[%d].mac", i, mac, sizeof(mac));
 			node = find_dev_node(mac);
-			if (!node)
-				continue;
+			if (!node) {
+				node = add_dev_node(mac);
+				if (!node) continue;
+				node->online = 0;
+			}
 
 			memset(start, 0, sizeof(start));
 			memset(end, 0, sizeof(end));
@@ -662,6 +664,10 @@ void update_dev_custom_time(void)
 		af_uci_get_array_value(ctx, "appfilter.@device_time[%d].data", i, time_cfg, sizeof(time_cfg));
 
 		dev_node_t *node = find_dev_node(mac);
+		if (!node) {
+			node = add_dev_node(mac);
+			if (node) node->online = 0;
+		}
 		if (node) {
 			strncpy(node->custom_time_json, time_cfg, sizeof(node->custom_time_json) - 1);
 		}

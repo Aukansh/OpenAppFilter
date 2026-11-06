@@ -20,6 +20,7 @@
 #include "af_log.h"
 
 struct hlist_head af_conn_table[AF_CONN_HASH_SIZE];
+struct list_head af_conn_lru_head = LIST_HEAD_INIT(af_conn_lru_head);
 
 DEFINE_SPINLOCK(af_conn_lock);
 
@@ -38,6 +39,7 @@ void af_conn_cleanup(void)
 	for (i = 0; i < AF_CONN_HASH_SIZE; i++) {
 		hlist_for_each_entry_safe(p, n, &af_conn_table[i], node) {
 			hlist_del(&p->node);
+			list_del(&p->lru_list);
 			kfree(p);
 		}
 	}
@@ -68,6 +70,7 @@ af_conn_t *af_conn_add(u32 src_ip, u32 dst_ip, u16 src_port, u16 dst_port, u8 pr
 	conn->state = AF_CONN_NEW;
 	conn->last_jiffies = jiffies;
 	hlist_add_head(&conn->node, &af_conn_table[hash]);
+	list_add(&conn->lru_list, &af_conn_lru_head);
 	AF_LMT_INFO("add new conn ok...%pI4:%d->%pI4:%d %d\n",
 		    &conn->src_ip, conn->src_port, &conn->dst_ip, conn->dst_port, conn->protocol);
 	return conn;
@@ -103,6 +106,7 @@ af_conn_t *af_conn_find_and_add(u32 src_ip, u32 dst_ip, u16 src_port, u16 dst_po
 void af_conn_update(af_conn_t *conn, u32 app_id, u8 drop)
 {
 	spin_lock(&af_conn_lock);
+	list_move(&conn->lru_list, &af_conn_lru_head);
 	conn->app_id = app_id;
 	conn->drop = drop;
 	conn->last_jiffies = jiffies;
@@ -112,32 +116,22 @@ void af_conn_update(af_conn_t *conn, u32 app_id, u8 drop)
 #define MAX_AF_CONN_CHECK_COUNT 5
 void af_conn_clean_timeout(void)
 {
-	int i;
-	af_conn_t *conn;
-	struct hlist_node *n;
 	unsigned long timeout = AF_CONN_TIMEOUT * HZ;
-	static int last_bucket = 0;
-	int count = 0;
+	struct list_head *pos, *q;
+	af_conn_t *conn;
 
 	spin_lock(&af_conn_lock);
-	for (i = last_bucket; i < AF_CONN_HASH_SIZE; i++) {
-		hlist_for_each_entry_safe(conn, n, &af_conn_table[i], node) {
-			if (time_after(jiffies, conn->last_jiffies + timeout)) {
-				AF_LMT_INFO("clean timeout conn ok...%pI4:%d->%pI4:%d %d\n",
-					    &conn->src_ip, conn->src_port, &conn->dst_ip, conn->dst_port, conn->protocol);
-				hlist_del(&(conn->node));
-				kfree(conn);
-			}
-		}
-		last_bucket = i;
-		count++;
-		if (count > MAX_AF_CONN_CHECK_COUNT) {
+	list_for_each_prev_safe(pos, q, &af_conn_lru_head) {
+		conn = list_entry(pos, af_conn_t, lru_list);
+		if (time_after(jiffies, conn->last_jiffies + timeout)) {
+			AF_LMT_INFO("clean timeout conn ok...%pI4:%d->%pI4:%d %d\n",
+				    &conn->src_ip, conn->src_port, &conn->dst_ip, conn->dst_port, conn->protocol);
+			hlist_del(&(conn->node));
+			list_del(&conn->lru_list);
+			kfree(conn);
+		} else {
 			break;
 		}
-		last_bucket = i + 1;
-	}
-	if (last_bucket >= AF_CONN_HASH_SIZE) {
-		last_bucket = 0;
 	}
 	spin_unlock(&af_conn_lock);
 }

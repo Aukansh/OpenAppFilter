@@ -1319,11 +1319,13 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 			return NF_DROP;
 		}
 
-		if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
+		if (skb_is_nonlinear(skb)) {
+			int read_len = flow.l4_len < MAX_AF_SUPPORT_DATA_LEN ? flow.l4_len : MAX_AF_SUPPORT_DATA_LEN;
+			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, read_len);
 			if (!flow.l4_data) {
 				return NF_ACCEPT;
 			}
+			flow.l4_len = read_len;
 			AF_LMT_DEBUG("##match nonlinear skb, len = %d\n", flow.l4_len);
 			malloc_data = 1;
 		}
@@ -1472,22 +1474,8 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		// 1: drop , 0: accept
 		int ct_action = (NF_DROP_BIT == (ct->mark & NF_DROP_BIT)) ? 1 : 0;
 		flow.ignore = (NF_IGNORE_BIT == (ct->mark & NF_IGNORE_BIT)) ? 1 : 0;
-		int dl_unblocked = (g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac));
 		if (flow.ignore) {
 			AF_LMT_DEBUG("match ignore appid = %d, drop = %d\n", app_id, ct_action);
-		}
-
-		if (g_oaf_filter_enable) {
-			// quic proto
-			if (g_disable_quic && app_id == APPID_QUIC && ct_action && !dl_unblocked) {
-				AF_LMT_INFO("mark = %x,drop appid = %d\n", ct->mark, app_id);
-				return NF_DROP;
-			}
-
-			if (g_app_filter_mode && ct_action && !dl_unblocked) {
-				AF_LMT_INFO("ct drop all app\n");
-				return NF_DROP;
-			}
 		}
 
 		if (app_id > 1000 && app_id <= 32512) {
@@ -1497,7 +1485,24 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 
 			if (cached_ver == cur_ver) {
 				should_drop = ct_action;
+				if (g_oaf_record_enable && !flow.ignore) {
+					af_update_client_app_info_by_mac(client_mac, app_id, ct_action);
+				}
+				return should_drop ? NF_DROP : NF_ACCEPT;
 			} else {
+				int dl_unblocked = (g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac));
+				
+				if (g_oaf_filter_enable) {
+					if (g_disable_quic && app_id == APPID_QUIC && ct_action && !dl_unblocked) {
+						AF_LMT_INFO("mark = %x,drop appid = %d\n", ct->mark, app_id);
+						return NF_DROP;
+					}
+					if (g_app_filter_mode && ct_action && !dl_unblocked) {
+						AF_LMT_INFO("ct drop all app\n");
+						return NF_DROP;
+					}
+				}
+
 				should_drop = 0;
 				if (g_oaf_filter_enable) {
 					if (g_disable_quic && app_id == APPID_QUIC) {
