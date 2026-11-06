@@ -77,6 +77,9 @@ nf_client_list_clear(void)
 	while (!list_empty(&pending)) {
 		p = list_first_entry(&pending, af_client_info_t, hlist);
 		list_del(&(p->hlist));
+		if (p->ip != 0) {
+			list_del(&(p->ip_list));
+		}
 		memset(mac_str, 0x0, sizeof(mac_str));
 		sprintf(mac_str, MAC_FMT, MAC_ARRAY(p->mac));
 		AF_DEBUG("clean mac:%s\n", mac_str);
@@ -212,6 +215,9 @@ void check_client_expire(void)
 	}
 	if (victim) {
 		list_del(&(victim->hlist));
+		if (victim->ip != 0) {
+			list_del(&(victim->ip_list));
+		}
 		if (total_client) {
 			total_client--;
 		}
