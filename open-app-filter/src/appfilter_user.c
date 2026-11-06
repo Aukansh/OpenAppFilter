@@ -654,13 +654,13 @@ void update_dev_custom_time(void)
 	struct uci_context *ctx = uci_alloc_context();
 	if (!ctx) return;
 
-	int num = af_get_uci_list_num(ctx, "appfilter", "af_user");
+	int num = af_get_uci_list_num(ctx, "appfilter", "device_time");
 	for (int i = 0; i < num; i++) {
 		char mac[32] = {0};
 		char time_cfg[1024] = {0};
-		af_uci_get_array_value(ctx, "appfilter.@af_user[%d].mac", i, mac, sizeof(mac));
-		af_uci_get_array_value(ctx, "appfilter.@af_user[%d].custom_time", i, time_cfg, sizeof(time_cfg));
-		
+		af_uci_get_array_value(ctx, "appfilter.@device_time[%d].mac", i, mac, sizeof(mac));
+		af_uci_get_array_value(ctx, "appfilter.@device_time[%d].data", i, time_cfg, sizeof(time_cfg));
+
 		dev_node_t *node = find_dev_node(mac);
 		if (node) {
 			strncpy(node->custom_time_json, time_cfg, sizeof(node->custom_time_json) - 1);
