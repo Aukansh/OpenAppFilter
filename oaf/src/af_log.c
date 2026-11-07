@@ -1,14 +1,14 @@
+// SPDX-License-Identifier: MIT
 #include <linux/init.h>
-#include <linux/fs.h>
-#include <linux/version.h>
-#include <linux/seq_file.h>
-#include <linux/list.h>
+#include <linux/module.h>
 #include <linux/sysctl.h>
+#include <linux/version.h>
+
 #include "app_filter.h"
 #include "af_log.h"
+
 int af_log_lvl = 1;
 int af_test_mode = 0;
-// todo: rename af_log.c
 int g_oaf_filter_enable __read_mostly = 0;
 int g_oaf_record_enable __read_mostly = 0;
 int g_by_pass_accl = 1;
@@ -21,129 +21,126 @@ int g_tcp_rst = 1;
 int g_feature_init = 0;
 char g_oaf_version[64] = AF_VERSION;
 int g_disable_quic = 0;
-int g_app_filter_mode = 0; // 0 = specified apps, 1 = all apps
-int g_daily_limit_mode = 0; // 0 = share total time, 1 = independent per device
-/* 
-	cat /proc/sys/oaf/debug
-*/
+int g_app_filter_mode = 0;  /* 0 = specified apps, 1 = all apps */
+int g_daily_limit_mode = 0; /* 0 = share total time, 1 = independent per device */
+
+/* cat /proc/sys/oaf/debug */
 static struct ctl_table oaf_table[] = {
 	{
 		.procname	= "debug",
 		.data		= &af_log_lvl,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "feature_init",
 		.data		= &g_feature_init,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "version",
 		.data		= g_oaf_version,
-		.maxlen 	= 64,
+		.maxlen		= 64,
 		.mode		= 0444,
-		.proc_handler = proc_dostring,
+		.proc_handler	= proc_dostring,
 	},
 	{
 		.procname	= "test_mode",
 		.data		= &af_test_mode,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "enable",
 		.data		= &g_oaf_filter_enable,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "by_pass_accl",
 		.data		= &g_by_pass_accl,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "tcp_rst",
 		.data		= &g_tcp_rst,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "lan_ifname",
 		.data		= g_lan_ifname,
-		.maxlen 	= 64,
+		.maxlen		= 64,
 		.mode		= 0666,
-		.proc_handler = proc_dostring,
+		.proc_handler	= proc_dostring,
 	},
 	{
 		.procname	= "record_enable",
 		.data		= &g_oaf_record_enable,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "user_mode",
 		.data		= &g_user_mode,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "work_mode",
 		.data		= &af_work_mode,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "lan_ip",
 		.data		= &af_lan_ip,
-		.maxlen = 	sizeof(unsigned int),
+		.maxlen		= sizeof(unsigned int),
 		.mode		= 0666,
 		.proc_handler	= proc_douintvec,
 	},
 	{
-		.procname = "lan_mask",
-		.data = &af_lan_mask,
-		.maxlen = sizeof(unsigned int),
-		.mode = 0666,
-		.proc_handler = proc_douintvec,
+		.procname	= "lan_mask",
+		.data		= &af_lan_mask,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0666,
+		.proc_handler	= proc_douintvec,
 	},
 	{
 		.procname	= "disable_quic",
 		.data		= &g_disable_quic,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "app_filter_mode",
 		.data		= &g_app_filter_mode,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
 	{
 		.procname	= "daily_limit_mode",
 		.data		= &g_daily_limit_mode,
-		.maxlen 	= sizeof(int),
+		.maxlen		= sizeof(int),
 		.mode		= 0666,
 		.proc_handler	= proc_dointvec,
 	},
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0))
-	{
-	}
-#endif
+	{}
 };
+
 #define OAF_SYS_PROC_DIR "oaf"
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0))
@@ -156,8 +153,8 @@ static struct ctl_table oaf_root_table[] = {
 	{}
 };
 #endif
-static struct ctl_table_header *oaf_table_header;
 
+static struct ctl_table_header *oaf_table_header;
 
 static int af_init_log_sysctl(void)
 {
@@ -166,8 +163,8 @@ static int af_init_log_sysctl(void)
 #else
 	oaf_table_header = register_sysctl(OAF_SYS_PROC_DIR, oaf_table);
 #endif
-	if (oaf_table_header == NULL){
-		printk("init log sysctl...failed\n");
+	if (!oaf_table_header) {
+		printk(KERN_ERR "init log sysctl...failed\n");
 		return -ENOMEM;
 	}
 	return 0;
@@ -180,12 +177,12 @@ static int af_fini_log_sysctl(void)
 	return 0;
 }
 
-int af_log_init(void){
-	af_init_log_sysctl();
-	return 0;
+int af_log_init(void)
+{
+	return af_init_log_sysctl();
 }
 
-int af_log_exit(void){
-	af_fini_log_sysctl();
-	return 0;
+int af_log_exit(void)
+{
+	return af_fini_log_sysctl();
 }

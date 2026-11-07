@@ -1,9 +1,11 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef __AF_CONFIG_H__
 #define __AF_CONFIG_H__
-#include "app_filter.h"
 
-enum AF_CONFIG_CMD
-{
+#include "app_filter.h"
+#include "cJSON.h"
+
+enum AF_CONFIG_CMD {
 	AF_CMD_ADD_APPID = 1,
 	AF_CMD_DEL_APPID,
 	AF_CMD_CLEAN_APPID,
@@ -14,8 +16,7 @@ enum AF_CONFIG_CMD
 
 typedef int (*af_config_handler_t)(cJSON *data);
 
-struct af_config_interface
-{
+struct af_config_interface {
 	enum AF_CONFIG_CMD cmd;
 	af_config_handler_t handler;
 	const char *description;
@@ -31,4 +32,4 @@ int af_config_set_mac_list(cJSON *data);
 int af_config_set_whitelist_mac_list(cJSON *data);
 int af_config_set_blocked_mac_list(cJSON *data);
 
-#endif
+#endif /* __AF_CONFIG_H__ */

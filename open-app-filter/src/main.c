@@ -43,7 +43,7 @@ THE SOFTWARE.
 #include "utils.h"
 
 #define CMD_GET_LAN_CIDR_FMT		"ip -4 addr show dev %s 2>/dev/null | awk '/inet /{print $2; exit}'"
-#define FORCE_DISCONNECT_HOLD_SECS	11
+#define FORCE_DISCONNECT_HOLD_SECS	6
 #define TICK_INTERVAL_MS		1000
 #define INITIAL_TICK_MS			5000
 
@@ -983,12 +983,8 @@ static void force_disconnect_tick(int trigger)
 		now = time(NULL);
 		if (now - g_fd_start >= FORCE_DISCONNECT_HOLD_SECS) {
 			g_force_disconnect_hold = 0;
-			if (g_af_config.time.time_mode == 3) {
-				update_oaf_proc_value("app_filter_mode", "1");
-			} else {
-				update_oaf_proc_value("app_filter_mode", 
-					g_af_config.global.app_filter_mode == 1 ? "1" : "0");
-			}
+			update_oaf_proc_value("app_filter_mode", 
+				g_af_config.global.app_filter_mode == 1 ? "1" : "0");
 			g_fd_state = FD_STATE_IDLE;
 			LOG_INFO("force_disconnect: restored correct app_filter_mode\n");
 		}
@@ -1256,10 +1252,6 @@ static void update_oaf_app_filter_mode_status(void)
 {
 	if (g_force_disconnect_hold) {
 		LOG_DEBUG("skip app_filter_mode update during hold\n");
-		return;
-	}
-	if (g_af_config.time.time_mode == 3) {
-		update_oaf_proc_value("app_filter_mode", "1");
 		return;
 	}
 	update_oaf_proc_value("app_filter_mode",

@@ -1,5 +1,9 @@
-#ifndef __AF_DEBUG_H__
-#define __AF_DEBUG_H__
+/* SPDX-License-Identifier: MIT */
+#ifndef __AF_LOG_H__
+#define __AF_LOG_H__
+
+#include <linux/printk.h>
+
 extern int af_log_lvl;
 extern int af_test_mode;
 extern int af_work_mode;
@@ -15,6 +19,7 @@ extern int g_app_filter_mode;
 extern int g_daily_limit_mode;
 extern char g_lan_ifname[64];
 extern int g_tcp_rst;
+
 #define LOG(level, fmt, ...) do { \
 	if ((level) <= af_log_lvl) { \
 		printk(fmt, ##__VA_ARGS__); \
@@ -27,19 +32,19 @@ extern int g_tcp_rst;
 	} \
 } while (0)
 
+#define AF_ERROR(...)		LOG(0, ##__VA_ARGS__)
+#define AF_WARN(...)		LOG(1, ##__VA_ARGS__)
+#define AF_INFO(...)		LOG(2, ##__VA_ARGS__)
+#define AF_DEBUG(...)		LOG(3, ##__VA_ARGS__)
 
-#define AF_ERROR(...)			LOG(0, ##__VA_ARGS__)
-#define AF_WARN(...)         	LOG(1, ##__VA_ARGS__)
-#define AF_INFO(...)         	LOG(2, ##__VA_ARGS__)
-#define AF_DEBUG(...)       	LOG(3, ##__VA_ARGS__)
-
-#define AF_LMT_ERROR(...)      	LLOG(0, ##__VA_ARGS__)
-#define AF_LMT_WARN(...)       	LLOG(1, ##__VA_ARGS__)
-#define AF_LMT_INFO(...)       	LLOG(2, ##__VA_ARGS__)
-#define AF_LMT_DEBUG(...)     	LLOG(3, ##__VA_ARGS__)
-
+#define AF_LMT_ERROR(...)	LLOG(0, ##__VA_ARGS__)
+#define AF_LMT_WARN(...)	LLOG(1, ##__VA_ARGS__)
+#define AF_LMT_INFO(...)	LLOG(2, ##__VA_ARGS__)
+#define AF_LMT_DEBUG(...)	LLOG(3, ##__VA_ARGS__)
 
 #define TEST_MODE() (af_test_mode)
+
 int af_log_init(void);
 int af_log_exit(void);
-#endif
+
+#endif /* __AF_LOG_H__ */

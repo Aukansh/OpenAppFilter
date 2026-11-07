@@ -1,7 +1,7 @@
 #ifndef AF_UTILS_H
 #define AF_UTILS_H
 
-u_int32_t af_get_timestamp_sec(void);
+u32 af_get_timestamp_sec(void);
 
 char *k_trim(char *s);
 
