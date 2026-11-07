@@ -61,11 +61,13 @@ typedef struct visiting_info{
 typedef struct af_client_info
 {
 	struct list_head hlist;
+	struct hlist_node ip_node;
 	unsigned char mac[MAC_ADDR_LEN];
 	unsigned int ip;
 	struct in6_addr ipv6;
 	unsigned long create_jiffies;
 	unsigned long update_jiffies;
+	int deleted;
 	flow_stat_t flow;
 	flow_stat_t last_flow;
 	flow_stat_t period_flow; 
