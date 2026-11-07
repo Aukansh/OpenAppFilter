@@ -74,6 +74,9 @@ static struct regexp_re *compile(char *regexp)
 	int err_flag = 0;
 
 	for (tail = &head; *regexp != '\0' && err_flag == 0; regexp++) {
+		if (tail == &head && (*regexp == '*' || *regexp == '+' || *regexp == '?')) {
+			return NULL;
+		}
 		tmp = getmem(sizeof(struct regexp_re));
 		if (!tmp) {
 			err_flag = 1;
@@ -141,10 +144,18 @@ static struct regexp_re *compile(char *regexp)
 			}
 			while (*regexp != '\0' && *regexp != ']') {
 				if (*regexp != '-') {
+					if (pstr >= tmp->ccl + 255) {
+						err_flag = 1;
+						break;
+					}
 					*pstr++ = *regexp++;
 					continue;
 				}
 				if (pstr == tmp->ccl || *(regexp + 1) == ']') {
+					err_flag = 1;
+					break;
+				}
+				if (pstr + (*(regexp + 1) - *(regexp - 1)) >= tmp->ccl + 255) {
 					err_flag = 1;
 					break;
 				}
@@ -162,6 +173,9 @@ static struct regexp_re *compile(char *regexp)
 			tmp->ch = *regexp;
 		}
 
+		if (err_flag) {
+			break;
+		}
 		tail->next = tmp;
 		tail = tmp;
 	}
@@ -202,17 +216,12 @@ static int matchplus(struct regexp_re *cur, struct regexp_re *regexp, char *text
 
 static int matchques(struct regexp_re *cur, struct regexp_re *regexp, char *text)
 {
-	int cnt = 1;
-	char *t = text;
-
-	if (*t != '\0' && cnt-- && MATCH_ONE(cur, t))
-		t++;
-	do {
-		if (matchhere(regexp, t))
+	if (*text != '\0' && MATCH_ONE(cur, text)) {
+		if (matchhere(regexp, text + 1))
 			return 1;
-	} while (t-- > text);
+	}
 
-	return 0;
+	return matchhere(regexp, text);
 }
 
 static int matchhere(struct regexp_re *regexp, char *text)
