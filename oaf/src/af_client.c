@@ -19,14 +19,11 @@
 #include "af_utils.h"
 #include "cJSON.h"
 
+#define MAX_EXPIRED_VISIT_INFO_COUNT	10
 DEFINE_RWLOCK(af_client_lock);
 struct list_head af_client_list_table[MAX_AF_CLIENT_HASH_SIZE];
 static u32 total_client;
 
-#define MAX_EXPIRED_VISIT_INFO_COUNT	10
-
-static void init_client_timer(af_client_info_t *client);
-static void stop_client_timer(af_client_info_t *client);
 
 static void nf_client_list_init(void)
 {
