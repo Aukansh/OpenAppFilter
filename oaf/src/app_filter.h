@@ -128,8 +128,11 @@ typedef struct port_info {
 	range_value_t range_list[MAX_PORT_RANGE_NUM];
 } port_info_t;
 
+struct regexp_re;
+
 typedef struct af_feature_node {
 	struct list_head head;
+	struct list_head global_head;
 	u_int32_t app_id;
 	char app_name[MAX_APP_NAME_LEN];
 	char feature[MAX_FEATURE_STR_LEN];
@@ -143,6 +146,9 @@ typedef struct af_feature_node {
 	char search_str[MAX_SEARCH_STR_LEN];
 	int ignore;
 	af_pos_info_t pos_info[MAX_POS_INFO_PER_FEATURE];
+
+	struct regexp_re *compiled_host_re;
+	struct regexp_re *compiled_req_re;
 } af_feature_node_t;
 
 typedef struct flow_info {
