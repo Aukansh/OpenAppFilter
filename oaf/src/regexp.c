@@ -161,7 +161,7 @@ static RE* compile(char *regexp)
 
 	tail->next = NULL;
 	if(err_flag) {
-		if (tmp && tail != tmp) {
+		if (tmp) {
 			if (tmp->type == LIST && tmp->ccl) {
 				kfree(tmp->ccl);
 			}
