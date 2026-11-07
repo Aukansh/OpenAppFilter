@@ -23,5 +23,8 @@ struct regexp_re {
 };
 
 int regexp_match(char *reg, char *text);
+struct regexp_re *regexp_compile(char *reg);
+int regexp_match_compiled(struct regexp_re *regexp, char *text);
+void regexp_free(struct regexp_re *regexp);
 
 #endif /* __REGEXP_H__ */
