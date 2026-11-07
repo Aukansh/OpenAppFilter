@@ -66,6 +66,7 @@ nf_client_list_clear(void)
 		while (!list_empty(&af_client_list_table[i])) {
 			p = list_first_entry(&af_client_list_table[i], af_client_info_t, hlist);
 			list_del(&(p->hlist));
+			p->deleted = 1;
 			list_add_tail(&(p->hlist), &pending);
 		}
 	}
@@ -134,7 +135,6 @@ af_client_info_t *find_and_add_af_client(unsigned char *mac)
 	return nfc;
 }	
 
-
 af_client_info_t *find_af_client_by_ip(unsigned int ip)
 {
 	af_client_info_t *node;
@@ -148,6 +148,7 @@ af_client_info_t *find_af_client_by_ip(unsigned int ip)
 	}
 	return NULL;
 }
+
 af_client_info_t *find_af_client_by_ipv6(struct in6_addr *ipv6)
 {
 	af_client_info_t *node;
@@ -164,6 +165,7 @@ af_client_info_t *find_af_client_by_ipv6(struct in6_addr *ipv6)
 	}
 	return NULL;
 }
+
 af_client_info_t *
 nf_client_add(unsigned char *mac)
 {
@@ -181,6 +183,7 @@ nf_client_add(unsigned char *mac)
 
 	node->create_jiffies = jiffies;
 	node->update_jiffies = jiffies;
+	node->deleted = 0;
 	INIT_HLIST_NODE(&node->ip_node);
 	index = get_mac_hash_code(mac);
 
@@ -190,9 +193,6 @@ nf_client_add(unsigned char *mac)
 	list_add(&(node->hlist), &af_client_list_table[index]);
 	return node;
 }
-
-
-
 
 void check_client_expire(void)
 {
@@ -214,6 +214,7 @@ void check_client_expire(void)
 		}
 	}
 	if (victim) {
+		victim->deleted = 1;
 		list_del(&(victim->hlist));
 		if (!hlist_unhashed(&victim->ip_node)) {
 			hlist_del_init(&victim->ip_node);
@@ -238,16 +239,21 @@ static void flush_expired_visit_info(af_client_info_t *node)
 	int i;
 	int count = 0;
 	u_int32_t cur_timep = 0;
-	int timeout = 0;
-	cur_timep = af_get_timestamp_sec();
-	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
-		if (node->visit_info[i].app_id == 0) {
-			continue;
-		}
+	unsigned long timeout = 0;
+
+	if (!node) {
+		return;
 	}
+
+	cur_timep = af_get_timestamp_sec();
+
 	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
 		if (count >= MAX_EXPIRED_VISIT_INFO_COUNT) {
 			break;
+		}
+
+		if (node->visit_info[i].app_id == 0) {
+			continue;
 		}
 
 		if (node->visit_info[i].total_num > 3) {
@@ -256,7 +262,8 @@ static void flush_expired_visit_info(af_client_info_t *node)
 			timeout = 60;
 		}
 
-		if (cur_timep - node->visit_info[i].latest_time > timeout) {
+		if (cur_timep > node->visit_info[i].latest_time && 
+		    (cur_timep - node->visit_info[i].latest_time > timeout)) {
 			memset(&node->visit_info[i], 0x0, sizeof(app_visit_info_t));
 			count++;
 		}
@@ -274,11 +281,15 @@ static int __af_visit_info_report(af_client_info_t *node)
 	cJSON *visit_info_array = NULL;
 	cJSON *root_obj = NULL;
 
+	if (!node) {
+		return 0;
+	}
+
 	flush_expired_visit_info(node);
 
 	root_obj = cJSON_CreateObject();
 	if (!root_obj) {
-		AF_ERROR("create json obj failed");
+		AF_ERROR("create json obj failed\n");
 		return 0;
 	}
 	sprintf(mac_str, MAC_FMT, MAC_ARRAY(node->mac));
@@ -291,12 +302,19 @@ static int __af_visit_info_report(af_client_info_t *node)
 	cJSON_AddNumberToObject(root_obj, "active", node->active);
 
 	visit_info_array = cJSON_CreateArray();
+	if (!visit_info_array) {
+		cJSON_Delete(root_obj);
+		return 0;
+	}
 	for (i = 0; i < MAX_RECORD_APP_NUM; i++) {
 		if (node->visit_info[i].app_id == 0) {
 			continue;
 		}
 		count++;
 		visit_obj = cJSON_CreateObject();
+		if (!visit_obj) {
+			continue;
+		}
 		cJSON_AddNumberToObject(visit_obj, "appid", node->visit_info[i].app_id);
 		cJSON_AddNumberToObject(visit_obj, "latest_action", node->visit_info[i].latest_action);
 		memset((char *)&node->visit_info[i], 0x0, sizeof(app_visit_info_t));
@@ -335,8 +353,6 @@ static inline int get_packet_dir(struct net_device *in)
 	return PKT_DIR_DOWN;
 }
 
-
-
 static void af_update_client_status(af_client_info_t *node)
 {
 	if (node->last_flow.down_bytes > 0){
@@ -369,7 +385,6 @@ static void af_update_client_status(af_client_info_t *node)
 		}
 	}
 }
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 static u_int32_t af_client_hook(void *priv,
@@ -423,7 +438,6 @@ static u_int32_t af_client_hook(unsigned int hook, struct sk_buff *skb,
 		memcpy(smac, &skb->cb[40], ETH_ALEN);
 	}
 
-
 	AF_CLIENT_LOCK_W();
 	nfc = find_af_client(smac);
 	if (!nfc) {
@@ -455,8 +469,6 @@ static u_int32_t af_client_hook(unsigned int hook, struct sk_buff *skb,
 	
 	return NF_ACCEPT;
 }
-
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 static u_int32_t af_client_hook2(void *priv,
@@ -499,7 +511,7 @@ static u_int32_t af_client_hook2(unsigned int hook,
 		return NF_ACCEPT;
 	}
 
-	AF_CLIENT_LOCK_R();
+	AF_CLIENT_LOCK_W();
 	
 	if (skb->protocol == htons(ETH_P_IP)) {
 		iph = ip_hdr(skb);
@@ -518,7 +530,7 @@ static u_int32_t af_client_hook2(unsigned int hook,
 		nfc->flow.down_pkts++;
 	}
 
-	AF_CLIENT_UNLOCK_R();
+	AF_CLIENT_UNLOCK_W();
 	return NF_ACCEPT;
 }
 
@@ -561,7 +573,6 @@ static struct nf_hook_ops af_client_ops[] = {
 };
 #endif
 
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
 static void client_timer_handler(struct timer_list *t)
 {
@@ -581,7 +592,7 @@ static void client_timer_handler(unsigned long data)
 	}
 
 	AF_CLIENT_LOCK_W();
-	if (!find_af_client(client->mac)) {
+	if (client->deleted || !find_af_client(client->mac)) {
 		AF_CLIENT_UNLOCK_W();
 		return;
 	}
@@ -593,11 +604,12 @@ static void client_timer_handler(unsigned long data)
 
 	af_update_client_status(client);
 	client->timer_count++;
-	AF_CLIENT_UNLOCK_W();
+
 	mod_timer(&client->client_timer, jiffies + HZ * 2); 
+	AF_CLIENT_UNLOCK_W();
 }
 
- void init_client_timer(af_client_info_t *client)
+void init_client_timer(af_client_info_t *client)
 {
 	if (!client) {
 		AF_ERROR("init_client_timer: invalid client\n");
@@ -669,7 +681,6 @@ static void fini_ip_sync_timer(void)
 
 void stop_client_timer(af_client_info_t *client)
 {
-	
 	if (!client) {
 		AF_ERROR("stop_client_timer: invalid client\n");
 		return;
