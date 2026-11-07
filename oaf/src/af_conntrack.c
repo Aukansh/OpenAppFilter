@@ -109,7 +109,7 @@ void af_conn_update(af_conn_t *conn, u32 app_id, u8 drop)
 	spin_unlock(&af_conn_lock);
 }
 
-#define MAX_AF_CONN_CHECK_COUNT 32
+#define MAX_AF_CONN_CHECK_COUNT 5
 void af_conn_clean_timeout(void)
 {
 	int i;

@@ -417,7 +417,7 @@ static void af_init_feature(char *feature_str)
 
 	while (*p++) {
 		if (*p == ',') {
-			if (p - begin >= MAX_FEATURE_STR_LEN) {
+			if (p - begin > MAX_FEATURE_STR_LEN) {
 				printk("error, feature len error %d\n", (int)(p - begin));
 				break;
 			}
@@ -428,7 +428,7 @@ static void af_init_feature(char *feature_str)
 		}
 	}
 	if (p != begin) {
-		if (p - begin >= MAX_FEATURE_STR_LEN) {
+		if (p - begin > MAX_FEATURE_STR_LEN) {
 			printk("error, feature len error %d\n", (int)(p - begin));
 		} else {
 			memcpy((char *)feature, begin, p - begin);
@@ -1319,13 +1319,11 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 			return NF_DROP;
 		}
 
-		if (skb_is_nonlinear(skb)) {
-			int read_len = flow.l4_len < MAX_AF_SUPPORT_DATA_LEN ? flow.l4_len : MAX_AF_SUPPORT_DATA_LEN;
-			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, read_len);
+		if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
+			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
 			if (!flow.l4_data) {
 				return NF_ACCEPT;
 			}
-			flow.l4_len = read_len;
 			AF_LMT_DEBUG("##match nonlinear skb, len = %d\n", flow.l4_len);
 			malloc_data = 1;
 		}
@@ -1474,8 +1472,22 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		// 1: drop , 0: accept
 		int ct_action = (NF_DROP_BIT == (ct->mark & NF_DROP_BIT)) ? 1 : 0;
 		flow.ignore = (NF_IGNORE_BIT == (ct->mark & NF_IGNORE_BIT)) ? 1 : 0;
+		int dl_unblocked = (g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac));
 		if (flow.ignore) {
 			AF_LMT_DEBUG("match ignore appid = %d, drop = %d\n", app_id, ct_action);
+		}
+
+		if (g_oaf_filter_enable) {
+			// quic proto
+			if (g_disable_quic && app_id == APPID_QUIC && ct_action && !dl_unblocked) {
+				AF_LMT_INFO("mark = %x,drop appid = %d\n", ct->mark, app_id);
+				return NF_DROP;
+			}
+
+			if (g_app_filter_mode && ct_action && !dl_unblocked) {
+				AF_LMT_INFO("ct drop all app\n");
+				return NF_DROP;
+			}
 		}
 
 		if (app_id > 1000 && app_id <= 32512) {
@@ -1485,24 +1497,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 
 			if (cached_ver == cur_ver) {
 				should_drop = ct_action;
-				if (g_oaf_record_enable && !flow.ignore) {
-					af_update_client_app_info_by_mac(client_mac, app_id, ct_action);
-				}
-				return should_drop ? NF_DROP : NF_ACCEPT;
 			} else {
-				int dl_unblocked = (g_daily_limit_mode == 1 && !af_blocked_mac_find(client_mac));
-				
-				if (g_oaf_filter_enable) {
-					if (g_disable_quic && app_id == APPID_QUIC && ct_action && !dl_unblocked) {
-						AF_LMT_INFO("mark = %x,drop appid = %d\n", ct->mark, app_id);
-						return NF_DROP;
-					}
-					if (g_app_filter_mode && ct_action && !dl_unblocked) {
-						AF_LMT_INFO("ct drop all app\n");
-						return NF_DROP;
-					}
-				}
-
 				should_drop = 0;
 				if (g_oaf_filter_enable) {
 					if (g_disable_quic && app_id == APPID_QUIC) {
@@ -1574,14 +1569,11 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 			if (app_id == 0 && flow.l4_len > 0) {
 				unsigned char *re_dpi_buf = flow.l4_data;
 				u_int8_t re_dpi_malloc = 0;
-				int saved_l4_len = flow.l4_len;
 
-				if (skb_is_nonlinear(skb)) {
-					int read_len = flow.l4_len < MAX_AF_SUPPORT_DATA_LEN ? flow.l4_len : MAX_AF_SUPPORT_DATA_LEN;
-					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, read_len);
+				if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
+					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
 					if (re_dpi_buf) {
 						re_dpi_malloc = 1;
-						flow.l4_len = read_len;
 					}
 				}
 
@@ -1600,7 +1592,6 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 						AF_LMT_INFO("re-DPI hit: mac=" MAC_FMT " appid=%u name=%s\n", MAC_ARRAY(client_mac), app_id, flow.app_name);
 					}
 					flow.l4_data = saved_l4_data;
-					flow.l4_len = saved_l4_len;
 					memset(&flow.http,  0, sizeof(flow.http));
 					memset(&flow.https, 0, sizeof(flow.https));
 					if (flow.client_hello) {
@@ -1648,13 +1639,11 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		return NF_DROP;
 	}
 
-	if (skb_is_nonlinear(skb)) {
-		int read_len = flow.l4_len < MAX_AF_SUPPORT_DATA_LEN ? flow.l4_len : MAX_AF_SUPPORT_DATA_LEN;
-		flow.l4_data = read_skb(skb, flow.l4_data - skb->data, read_len);
+	if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
+		flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
 		if (!flow.l4_data) {
 			return NF_ACCEPT;
 		}
-		flow.l4_len = read_len;
 		malloc_data = 1;
 	}
 	dpi_main(skb, &flow);
@@ -1744,9 +1733,6 @@ static u_int32_t app_filter_hook(unsigned int hook,
 	if (AF_MODE_BYPASS == af_work_mode) {
 		return NF_ACCEPT;
 	}
-	if (!skb || !skb->dev) {
-		return NF_ACCEPT;
-	}
 	return app_filter_hook_gateway_handle(skb, skb->dev);
 }
 
@@ -1764,9 +1750,6 @@ static u_int32_t app_filter_by_pass_hook(unsigned int hook,
 {
 #endif
 	if (AF_MODE_GATEWAY == af_work_mode) {
-		return NF_ACCEPT;
-	}
-	if (!skb || !skb->dev) {
 		return NF_ACCEPT;
 	}
 	return app_filter_hook_bypass_handle(skb, skb->dev);
