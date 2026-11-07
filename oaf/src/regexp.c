@@ -55,19 +55,19 @@ static int in_list(char ch, struct regexp_re *regexp)
 	return (*str != '\0') ^ regexp->nccl;
 }
 
-static void regexp_free(struct regexp_re *regexp)
+void regexp_free(struct regexp_re *regexp)
 {
 	struct regexp_re *tmp;
 
 	for (; regexp; regexp = tmp) {
 		tmp = regexp->next;
-		if (regexp->type == LIST && regexp->ccl)
+		if (regexp->ccl)
 			kfree(regexp->ccl);
 		kfree(regexp);
 	}
 }
 
-static struct regexp_re *compile(char *regexp)
+struct regexp_re *regexp_compile(char *regexp)
 {
 	struct regexp_re head, *tail, *tmp;
 	char *pstr;
@@ -183,7 +183,7 @@ static struct regexp_re *compile(char *regexp)
 	tail->next = NULL;
 	if (err_flag) {
 		if (tmp) {
-			if (tmp->type == LIST && tmp->ccl)
+			if (tmp->ccl)
 				kfree(tmp->ccl);
 			kfree(tmp);
 		}
@@ -250,27 +250,34 @@ static int matchhere(struct regexp_re *regexp, char *text)
 	return 0;
 }
 
-int regexp_match(char *reg, char *text)
+int regexp_match_compiled(struct regexp_re *regexp, char *text)
 {
-	struct regexp_re *regexp;
 	int ret;
 
-	regexp = compile(reg);
 	if (!regexp)
 		return 0;
 
 	if (regexp->type == BEGIN) {
-		ret = matchhere(regexp->next, text);
-		goto out;
+		return matchhere(regexp->next, text);
 	}
 
 	do {
 		ret = matchhere(regexp, text);
 		if (ret)
-			goto out;
+			return ret;
 	} while (*text++ != '\0');
 
-out:
-	regexp_free(regexp);
+	return 0;
+}
+
+int regexp_match(char *reg, char *text)
+{
+	struct regexp_re *regexp = regexp_compile(reg);
+	int ret = 0;
+	
+	if (regexp) {
+		ret = regexp_match_compiled(regexp, text);
+		regexp_free(regexp);
+	}
 	return ret;
 }
