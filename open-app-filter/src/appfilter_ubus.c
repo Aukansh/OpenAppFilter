@@ -1146,10 +1146,25 @@ static int handle_set_app_filter_adv(struct ubus_context *ctx,
 		af_uci_set_int_value(uci_ctx, "appfilter.global.disable_hnat",
 				     json_object_get_int(jval));
 	if ((jval = json_object_object_get(req_obj, "auto_load_engine"))) {
-		af_uci_set_int_value(uci_ctx, "appfilter.global.auto_load_engine",
-				     json_object_get_int(jval));
-		if (json_object_get_int(jval) == 0)
-			system("rm /etc/modules.d/oaf");
+		int auto_load = json_object_get_int(jval);
+		int old_auto_load = af_uci_get_int_value(uci_ctx, "appfilter.global.auto_load_engine");
+		
+		af_uci_set_int_value(uci_ctx, "appfilter.global.auto_load_engine", auto_load);
+		
+		if (auto_load != old_auto_load) {
+			if (auto_load == 0) {
+				system("rm -f /etc/modules.d/oaf");
+				LOG_WARN("auto_load_engine turned OFF, stopping appfilter and unloading oaf.ko...\n");
+				system("(sleep 1; /etc/init.d/appfilter stop 2>/dev/null >/dev/null; sleep 1; rmmod oaf 2>/dev/null) &");
+			} else {
+				system("echo 'oaf' > /etc/modules.d/oaf");
+				LOG_WARN("auto_load_engine turned ON, loading oaf.ko...\n");
+				system("modprobe nf_conntrack 2>/dev/null");
+				system("modprobe nf_reject_ipv4 2>/dev/null");
+				system("modprobe oaf 2>/dev/null");
+				system("/etc/init.d/appfilter start 2>/dev/null >/dev/null &");
+			}
+		}
 	}
 
 	af_uci_commit(uci_ctx, "appfilter");
