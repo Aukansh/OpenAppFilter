@@ -33,6 +33,9 @@ static char *cJSON_strdup(const char *str)
 	size_t len;
 	char *copy;
 
+	if (!str)
+		return NULL;
+
 	len = strlen(str) + 1;
 	copy = cJSON_malloc(len);
 	if (!copy)
@@ -98,8 +101,10 @@ static char *print_number(cJSON *item)
 	char *str;
 
 	str = cJSON_malloc(21);
-	if (str)
-		sprintf(str, "%d", item->valueint);
+	if (!str)
+		return NULL;
+	
+	sprintf(str, "%d", item->valueint);
 	return str;
 }
 
@@ -186,6 +191,9 @@ static char *print_string_ptr(const char *str)
 	char *ptr2, *out;
 	int len = 0;
 
+	if (!str)
+		return cJSON_strdup("\"\"");
+
 	ptr = str;
 	while (*ptr && ++len) {
 		if (*ptr < 32 || *ptr == '\"' || *ptr == '\\')
@@ -194,6 +202,9 @@ static char *print_string_ptr(const char *str)
 	}
 
 	out = cJSON_malloc(len + 3);
+	if (!out)
+		return NULL;
+
 	ptr2 = out;
 	ptr = str;
 	*ptr2++ = '\"';
@@ -261,6 +272,8 @@ cJSON *cJSON_Parse(const char *value)
 /* Render a cJSON item/entity/structure to text */
 char *cJSON_Print(cJSON *item)
 {
+	if (!item)
+		return NULL;
 	return print_value(item, 0);
 }
 
@@ -301,6 +314,9 @@ static const char *parse_value(cJSON *item, const char *value, int depth)
 static char *print_value(cJSON *item, int depth)
 {
 	char *out = NULL;
+
+	if (!item)
+		return NULL;
 
 	switch (item->type) {
 	case cJSON_NULL:   out = cJSON_strdup("null"); break;
@@ -356,7 +372,7 @@ static const char *parse_array(cJSON *item, const char *value, int depth)
 /* Render an array to text */
 static char *print_array(cJSON *item, int depth)
 {
-	char *out, *ptr, *ret;
+	char *out, *ptr, *ret, *new_out;
 	int len = 5;
 	cJSON *child = item->child;
 
@@ -374,7 +390,13 @@ static char *print_array(cJSON *item, int depth)
 			return NULL;
 		}
 		len += strlen(ret) + 3;
-		out = cJSON_realloc(out, len);
+		new_out = cJSON_realloc(out, len);
+		if (!new_out) {
+			cJSON_free(ret);
+			cJSON_free(out);
+			return NULL;
+		}
+		out = new_out;
 		ptr = out + strlen(out);
 		ptr += sprintf(ptr, "%s", ret);
 		if (child->next) {
@@ -405,6 +427,8 @@ static const char *parse_object(cJSON *item, const char *value, int depth)
 	}
 
 	item->child = child = cJSON_New_Item();
+	if (!child)
+		return NULL;
 	value = skip(parse_string(child, skip(value)));
 	if (!value)
 		return NULL;
@@ -446,7 +470,7 @@ static const char *parse_object(cJSON *item, const char *value, int depth)
 /* Render an object to text */
 static char *print_object(cJSON *item, int depth)
 {
-	char *out, *ptr, *ret, *str;
+	char *out, *ptr, *ret, *str, *new_out;
 	int len = 7, i;
 	cJSON *child = item->child;
 
@@ -473,7 +497,14 @@ static char *print_object(cJSON *item, int depth)
 			return NULL;
 		}
 		len += strlen(ret) + strlen(str) + 4 + depth;
-		out = cJSON_realloc(out, len);
+		new_out = cJSON_realloc(out, len);
+		if (!new_out) {
+			cJSON_free(str);
+			cJSON_free(ret);
+			cJSON_free(out);
+			return NULL;
+		}
+		out = new_out;
 		ptr = out + strlen(out);
 		for (i = 0; i < depth; i++)
 			*ptr++ = '\t';
@@ -579,9 +610,13 @@ void cJSON_Minify(char *json)
 /* Get Array size/item / object item */
 int cJSON_GetArraySize(cJSON *array)
 {
-	cJSON *c = array->child;
+	cJSON *c;
 	int i = 0;
 
+	if (!array)
+		return 0;
+
+	c = array->child;
 	while (c) {
 		i++;
 		c = c->next;
@@ -591,8 +626,12 @@ int cJSON_GetArraySize(cJSON *array)
 
 cJSON *cJSON_GetArrayItem(cJSON *array, int item)
 {
-	cJSON *c = array->child;
+	cJSON *c;
 
+	if (!array)
+		return NULL;
+
+	c = array->child;
 	while (c && item) {
 		item--;
 		c = c->next;
@@ -602,10 +641,15 @@ cJSON *cJSON_GetArrayItem(cJSON *array, int item)
 
 cJSON *cJSON_GetObjectItem(cJSON *object, const char *string)
 {
-	cJSON *c = object->child;
+	cJSON *c;
 
-	while (c && strcasecmp(c->string, string))
+	if (!object || !string)
+		return NULL;
+
+	c = object->child;
+	while (c && c->string && strcasecmp(c->string, string))
 		c = c->next;
+		
 	return c;
 }
 
@@ -619,8 +663,12 @@ static void suffix_object(cJSON *prev, cJSON *item)
 /* Add item to array/object */
 void cJSON_AddItemToArray(cJSON *array, cJSON *item)
 {
-	cJSON *c = array->child;
+	cJSON *c;
 
+	if (!array || !item)
+		return;
+
+	c = array->child;
 	if (!c) {
 		array->child = item;
 	} else {
@@ -632,6 +680,9 @@ void cJSON_AddItemToArray(cJSON *array, cJSON *item)
 
 void cJSON_AddItemToObject(cJSON *object, const char *string, cJSON *item)
 {
+	if (!object || !string || !item)
+		return;
+
 	if (item->string)
 		cJSON_free(item->string);
 	item->string = cJSON_strdup(string);
@@ -642,7 +693,7 @@ void cJSON_AddItemToObject(cJSON *object, const char *string, cJSON *item)
 cJSON *cJSON_CreateNull(void)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_NULL;
 	return item;
 }
@@ -650,7 +701,7 @@ cJSON *cJSON_CreateNull(void)
 cJSON *cJSON_CreateTrue(void)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_True;
 	return item;
 }
@@ -658,7 +709,7 @@ cJSON *cJSON_CreateTrue(void)
 cJSON *cJSON_CreateFalse(void)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_False;
 	return item;
 }
@@ -666,7 +717,7 @@ cJSON *cJSON_CreateFalse(void)
 cJSON *cJSON_CreateNumber(int num)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_Number;
 	item->valueint = (int)num;
 	return item;
@@ -675,16 +726,20 @@ cJSON *cJSON_CreateNumber(int num)
 cJSON *cJSON_CreateString(const char *string)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_String;
 	item->valuestring = cJSON_strdup(string);
+	if (!item->valuestring) {
+		cJSON_free(item);
+		return NULL;
+	}
 	return item;
 }
 
 cJSON *cJSON_CreateArray(void)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_Array;
 	return item;
 }
@@ -692,7 +747,7 @@ cJSON *cJSON_CreateArray(void)
 cJSON *cJSON_CreateObject(void)
 {
 	cJSON *item = cJSON_New_Item();
-
+	if (!item) return NULL;
 	item->type = cJSON_Object;
 	return item;
 }
@@ -701,10 +756,21 @@ cJSON *cJSON_CreateObject(void)
 cJSON *cJSON_CreateIntArray(int *numbers, int count)
 {
 	int i;
-	cJSON *n = NULL, *p = NULL, *a = cJSON_CreateArray();
+	cJSON *n = NULL, *p = NULL, *a;
+
+	if (!numbers || count <= 0)
+		return NULL;
+
+	a = cJSON_CreateArray();
+	if (!a)
+		return NULL;
 
 	for (i = 0; i < count; i++) {
 		n = cJSON_CreateNumber(numbers[i]);
+		if (!n) {
+			cJSON_Delete(a);
+			return NULL;
+		}
 		if (!i)
 			a->child = n;
 		else
@@ -717,10 +783,21 @@ cJSON *cJSON_CreateIntArray(int *numbers, int count)
 cJSON *cJSON_CreateStringArray(const char **strings, int count)
 {
 	int i;
-	cJSON *n = NULL, *p = NULL, *a = cJSON_CreateArray();
+	cJSON *n = NULL, *p = NULL, *a;
+
+	if (!strings || count <= 0)
+		return NULL;
+
+	a = cJSON_CreateArray();
+	if (!a)
+		return NULL;
 
 	for (i = 0; i < count; i++) {
 		n = cJSON_CreateString(strings[i]);
+		if (!n) {
+			cJSON_Delete(a);
+			return NULL;
+		}
 		if (!i)
 			a->child = n;
 		else
