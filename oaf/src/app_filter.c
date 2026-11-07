@@ -417,7 +417,7 @@ static void af_init_feature(char *feature_str)
 
 	while (*p++) {
 		if (*p == ',') {
-			if (p - begin > MAX_FEATURE_STR_LEN) {
+			if (p - begin >= MAX_FEATURE_STR_LEN) {
 				printk("error, feature len error %d\n", (int)(p - begin));
 				break;
 			}
@@ -428,7 +428,7 @@ static void af_init_feature(char *feature_str)
 		}
 	}
 	if (p != begin) {
-		if (p - begin > MAX_FEATURE_STR_LEN) {
+		if (p - begin >= MAX_FEATURE_STR_LEN) {
 			printk("error, feature len error %d\n", (int)(p - begin));
 		} else {
 			memcpy((char *)feature, begin, p - begin);
@@ -1744,6 +1744,9 @@ static u_int32_t app_filter_hook(unsigned int hook,
 	if (AF_MODE_BYPASS == af_work_mode) {
 		return NF_ACCEPT;
 	}
+	if (!skb || !skb->dev) {
+		return NF_ACCEPT;
+	}
 	return app_filter_hook_gateway_handle(skb, skb->dev);
 }
 
@@ -1761,6 +1764,9 @@ static u_int32_t app_filter_by_pass_hook(unsigned int hook,
 {
 #endif
 	if (AF_MODE_GATEWAY == af_work_mode) {
+		return NF_ACCEPT;
+	}
+	if (!skb || !skb->dev) {
 		return NF_ACCEPT;
 	}
 	return app_filter_hook_bypass_handle(skb, skb->dev);
