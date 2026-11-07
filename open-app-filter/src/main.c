@@ -53,7 +53,7 @@ enum {
 	FD_STATE_WAIT,
 };
 
-int current_log_level = LOG_LEVEL_INFO;
+int current_log_level = LOG_LEVEL_ERROR;
 af_run_time_status_t g_af_status;
 af_config_t g_af_config;
 int g_oaf_config_change = 1;
