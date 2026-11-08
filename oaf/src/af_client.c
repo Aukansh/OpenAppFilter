@@ -19,11 +19,14 @@
 #include "af_utils.h"
 #include "cJSON.h"
 
-#define MAX_EXPIRED_VISIT_INFO_COUNT	10
 DEFINE_RWLOCK(af_client_lock);
 struct list_head af_client_list_table[MAX_AF_CLIENT_HASH_SIZE];
 static u32 total_client;
 
+#define MAX_EXPIRED_VISIT_INFO_COUNT	10
+
+static void init_client_timer(af_client_info_t *client);
+static void stop_client_timer(af_client_info_t *client);
 
 static void nf_client_list_init(void)
 {
@@ -66,6 +69,7 @@ static void nf_client_list_clear(void)
 		memset(mac_str, 0, sizeof(mac_str));
 		sprintf(mac_str, MAC_FMT, MAC_ARRAY(p->mac));
 		AF_DEBUG("clean mac:%s\n", mac_str);
+		stop_client_timer(p);
 		kfree(p);
 	}
 }
@@ -168,6 +172,7 @@ af_client_info_t *nf_client_add(unsigned char *mac)
 
 	AF_LMT_INFO("new client mac=" MAC_FMT "\n", MAC_ARRAY(node->mac));
 	total_client++;
+	init_client_timer(node);
 	list_add(&node->hlist, &af_client_list_table[index]);
 	return node;
 }
@@ -202,6 +207,7 @@ void check_client_expire(void)
 	/* del_timer_sync() must run outside the write lock. */
 	if (victim) {
 		AF_INFO("del client:" MAC_FMT "\n", MAC_ARRAY(victim->mac));
+		stop_client_timer(victim);
 		kfree(victim);
 	}
 }
@@ -260,8 +266,8 @@ static int af_client_report_visit_info(af_client_info_t *node)
 	cJSON_AddStringToObject(root_obj, "mac", mac_str);
 	cJSON_AddStringToObject(root_obj, "ip", ip_str);
 	cJSON_AddNumberToObject(root_obj, "app_num", node->visit_app_num);
-	cJSON_AddNumberToObject(root_obj, "up_flow", (u32)(atomic64_read(&node->period_flow.up_bytes) >> 10));
-	cJSON_AddNumberToObject(root_obj, "down_flow", (u32)(atomic64_read(&node->period_flow.down_bytes) >> 10));
+	cJSON_AddNumberToObject(root_obj, "up_flow", (u32)(node->period_flow.up_bytes >> 10));
+	cJSON_AddNumberToObject(root_obj, "down_flow", (u32)(node->period_flow.down_bytes >> 10));
 	cJSON_AddNumberToObject(root_obj, "active", node->active);
 
 	visit_info_array = cJSON_CreateArray();
@@ -309,36 +315,26 @@ static inline int get_packet_dir(struct net_device *in)
 
 static void af_update_client_status(af_client_info_t *node)
 {
-	long long cur_up = atomic64_read(&node->flow.up_bytes);
-	long long cur_down = atomic64_read(&node->flow.down_bytes);
-	long long cur_up_pkts = atomic64_read(&node->flow.up_pkts);
-	long long cur_down_pkts = atomic64_read(&node->flow.down_pkts);
+	if (node->last_flow.down_bytes > 0)
+		node->period_flow.down_bytes += (node->flow.down_bytes - node->last_flow.down_bytes);
 
-	long long last_up = atomic64_read(&node->last_flow.up_bytes);
-	long long last_down = atomic64_read(&node->last_flow.down_bytes);
-	long long last_up_pkts = atomic64_read(&node->last_flow.up_pkts);
-	long long last_down_pkts = atomic64_read(&node->last_flow.down_pkts);
-
-	if (last_down > 0)
-		atomic64_add(cur_down - last_down, &node->period_flow.down_bytes);
-
-	if (last_up > 0)
-		atomic64_add(cur_up - last_up, &node->period_flow.up_bytes);
+	if (node->last_flow.up_bytes > 0)
+		node->period_flow.up_bytes += (node->flow.up_bytes - node->last_flow.up_bytes);
 
 	AF_LMT_DEBUG("period flow down:%llu up: %llu pkg up %d\n",
-		     atomic64_read(&node->period_flow.down_bytes), atomic64_read(&node->period_flow.up_bytes),
+		     node->period_flow.down_bytes, node->period_flow.up_bytes,
 		     node->rate.pkt_up_rate);
 
-	/* 1s */
-	node->rate.up_rate = cur_up - last_up;
-	node->rate.down_rate = cur_down - last_down;
-	node->rate.pkt_up_rate = cur_up_pkts - last_up_pkts;
-	node->rate.pkt_down_rate = cur_down_pkts - last_down_pkts;
+	/* 2s */
+	node->rate.up_rate = (node->flow.up_bytes - node->last_flow.up_bytes) >> 1;
+	node->rate.down_rate = (node->flow.down_bytes - node->last_flow.down_bytes) >> 1;
+	node->rate.pkt_up_rate = (node->flow.up_pkts - node->last_flow.up_pkts) >> 1;
+	node->rate.pkt_down_rate = (node->flow.down_pkts - node->last_flow.down_pkts) >> 1;
 
-	atomic64_set(&node->last_flow.up_bytes, cur_up);
-	atomic64_set(&node->last_flow.down_bytes, cur_down);
-	atomic64_set(&node->last_flow.up_pkts, cur_up_pkts);
-	atomic64_set(&node->last_flow.down_pkts, cur_down_pkts);
+	node->last_flow.up_bytes = node->flow.up_bytes;
+	node->last_flow.down_bytes = node->flow.down_bytes;
+	node->last_flow.up_pkts = node->flow.up_pkts;
+	node->last_flow.down_pkts = node->flow.down_pkts;
 
 	if (node->rate.pkt_down_rate > 10 || node->rate.pkt_up_rate > 5) {
 		node->active_time++;
@@ -347,7 +343,7 @@ static void af_update_client_status(af_client_info_t *node)
 	} else {
 		node->inactive_time++;
 		node->active_time = 0;
-		if (node->active && node->inactive_time > 60)
+		if (node->active && node->inactive_time > 30)
 			node->active = 0;
 	}
 }
@@ -396,15 +392,15 @@ static u32 af_client_hook(void *priv, struct sk_buff *skb,
 			if (iph && nfc->ip != iph->saddr) {
 				AF_DEBUG("update node " MAC_FMT " ipv4 %pI4--->%pI4\n",
 					 MAC_ARRAY(nfc->mac), &nfc->ip, &iph->saddr);
-				WRITE_ONCE(nfc->ip, iph->saddr);
+				nfc->ip = iph->saddr;
 			}
 		} else if (skb->protocol == htons(ETH_P_IPV6)) {
 			ip6h = ipv6_hdr(skb);
 			if (ip6h && !ipv6_addr_equal(&nfc->ipv6, &ip6h->saddr))
 				nfc->ipv6 = ip6h->saddr;
 		}
-		atomic64_add(skb->len, &nfc->flow.up_bytes);
-		atomic64_inc(&nfc->flow.up_pkts);
+		nfc->flow.up_bytes += skb->len;
+		nfc->flow.up_pkts++;
 	}
 	AF_CLIENT_UNLOCK_W();
 
@@ -445,8 +441,8 @@ static u32 af_client_hook2(void *priv, struct sk_buff *skb,
 	}
 
 	if (nfc) {
-		atomic64_add(skb->len, &nfc->flow.down_bytes);
-		atomic64_inc(&nfc->flow.down_pkts);
+		nfc->flow.down_bytes += skb->len;
+		nfc->flow.down_pkts++;
 	}
 	AF_CLIENT_UNLOCK_W();
 
@@ -468,24 +464,50 @@ static struct nf_hook_ops af_client_ops[] = {
 	},
 };
 
-void af_client_do_timer_tick(void)
+static void client_timer_handler(struct timer_list *t)
 {
-	int i;
-	af_client_info_t *node;
+	af_client_info_t *client = timer_container_of(client, t, client_timer);
 
-	AF_CLIENT_LOCK_W();
-	for (i = 0; i < MAX_AF_CLIENT_HASH_SIZE; i++) {
-		list_for_each_entry(node, &af_client_list_table[i], hlist) {
-			if (node->timer_count >= 60) {
-				af_client_report_visit_info(node);
-				node->timer_count = 0;
-			}
-			af_update_client_status(node);
-			node->timer_count++;
-		}
+	if (!client) {
+		AF_ERROR("client timer handler: invalid client\n");
+		return;
 	}
 
+	AF_CLIENT_LOCK_W();
+	if (!find_af_client(client->mac)) {
+		AF_CLIENT_UNLOCK_W();
+		return;
+	}
+
+	if (client->timer_count >= 30) {
+		af_client_report_visit_info(client);
+		client->timer_count = 0;
+	}
+
+	af_update_client_status(client);
+	client->timer_count++;
 	AF_CLIENT_UNLOCK_W();
+	mod_timer(&client->client_timer, jiffies + HZ * 2);
+}
+
+static void init_client_timer(af_client_info_t *client)
+{
+	if (!client) {
+		AF_ERROR("init_client_timer: invalid client\n");
+		return;
+	}
+
+	timer_setup(&client->client_timer, client_timer_handler, 0);
+	mod_timer(&client->client_timer, jiffies + HZ * 1);
+}
+
+static void stop_client_timer(af_client_info_t *client)
+{
+	if (!client) {
+		AF_ERROR("stop_client_timer: invalid client\n");
+		return;
+	}
+	timer_delete_sync(&client->client_timer);
 }
 
 int af_client_init(void)
