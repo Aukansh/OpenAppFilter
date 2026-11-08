@@ -1662,6 +1662,7 @@ static void oaf_timer_func(struct timer_list *t)
 	if (count % 60 == 0)
 		check_client_expire();
 
+	af_client_do_timer_tick();
 	bump_filter_version_if_scalar_changed();
 
 	count++;
