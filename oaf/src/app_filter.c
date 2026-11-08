@@ -778,7 +778,7 @@ static int af_match_by_pos(flow_info_t *flow, af_feature_node_t *node)
 			else
 				pos = node->pos_info[i].pos;
 
-			if (pos >= flow->l4_len)
+			if (pos < 0 || pos >= flow->l4_len)
 				return AF_FALSE;
 
 			if (flow->l4_data[pos] != node->pos_info[i].value)
