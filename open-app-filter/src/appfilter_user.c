@@ -154,36 +154,57 @@ void dev_foreach(void *arg, iter_func iter)
 
 static void update_dev_hostname(void)
 {
-	char line[256];
-	char hostname[128], mac[32], ip[32];
 	FILE *fp;
+	char buf[16384] = {0};
+	struct json_object *root, *name_obj, *ipaddrs_obj;
+	size_t read_bytes;
 
-	fp = fopen("/tmp/dhcp.leases", "r");
+	fp = popen("ubus call luci-rpc getHostHints", "r");
 	if (!fp) {
-		printf("open dhcp lease file....failed\n");
+		LOG_WARN("exec ubus getHostHints failed\n");
 		return;
 	}
 
-	while (fgets(line, sizeof(line), fp)) {
-		dev_node_t *node;
+	read_bytes = fread(buf, 1, sizeof(buf) - 1, fp);
+	pclose(fp);
 
-		if (strlen(line) <= 16)
-			continue;
+	if (read_bytes == 0) {
+		return;
+	}
 
-		sscanf(line, "%*s %31s %31s %127s", mac, ip, hostname);
-		node = find_dev_node(mac);
+	root = json_tokener_parse(buf);
+	if (!root) {
+		LOG_WARN("parse getHostHints json failed\n");
+		return;
+	}
+
+	json_object_object_foreach(root, mac_key, val) {
+		dev_node_t *node = find_dev_node((char *)mac_key);
+
 		if (!node) {
-			node = add_dev_node(mac);
-			if (!node)
-				continue;
-			strncpy(node->ip, ip, sizeof(node->ip));
+			node = add_dev_node((char *)mac_key);
+			if (!node) continue;
 			node->online = 0;
 			node->offline_time = get_timestamp();
 		}
-		if (hostname[0] && hostname[0] != '*')
-			strncpy(node->hostname, hostname, sizeof(node->hostname));
+
+		if (json_object_object_get_ex(val, "name", &name_obj)) {
+			const char *name = json_object_get_string(name_obj);
+			if (name && name[0]) {
+				strncpy(node->hostname, name, sizeof(node->hostname) - 1);
+				node->hostname[sizeof(node->hostname) - 1] = '\0';
+			}
+		}
+
+		if (json_object_object_get_ex(val, "ipaddrs", &ipaddrs_obj) && json_object_array_length(ipaddrs_obj) > 0) {
+			const char *ip = json_object_get_string(json_object_array_get_idx(ipaddrs_obj, 0));
+			if (ip && ip[0]) {
+				strncpy(node->ip, ip, sizeof(node->ip) - 1);
+				node->ip[sizeof(node->ip) - 1] = '\0';
+			}
+		}
 	}
-	fclose(fp);
+	json_object_put(root);
 }
 
 static void clean_dev_nickname_iter(void *arg, dev_node_t *node)

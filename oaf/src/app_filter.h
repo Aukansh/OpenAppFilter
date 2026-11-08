@@ -132,7 +132,6 @@ struct regexp_re;
 
 typedef struct af_feature_node {
 	struct list_head head;
-	struct list_head global_head;
 	u_int32_t app_id;
 	char app_name[MAX_APP_NAME_LEN];
 	char feature[MAX_FEATURE_STR_LEN];

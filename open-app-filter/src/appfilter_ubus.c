@@ -98,30 +98,6 @@ static int reply_code(struct ubus_context *ctx, struct ubus_request_data *req,
 	return ret;
 }
 
-static void get_hostname_by_mac(const char *mac, char *hostname)
-{
-	char line[256];
-	FILE *fp;
-
-	if (!mac || !hostname)
-		return;
-	hostname[0] = '\0';
-
-	fp = fopen("/tmp/dhcp.leases", "r");
-	if (!fp) {
-		printf("open dhcp lease file....failed\n");
-		return;
-	}
-	while (fgets(line, sizeof(line), fp)) {
-		char h[128], m[32];
-
-		if (sscanf(line, "%*s %31s %*s %127s", m, h) == 2 &&
-		    !strcasecmp(mac, m))
-			strcpy(hostname, h);
-	}
-	fclose(fp);
-}
-
 static int app_icon_exists(int app_id)
 {
 	char path[512];
@@ -558,7 +534,6 @@ static int appfilter_handle_dev_list(struct ubus_context *ctx,
 			struct json_object *dev_obj = json_object_new_object();
 			struct json_object *app_array = json_object_new_array();
 			app_visit_time_info_t top5_app_list[5];
-			char hostname[128] = {0};
 
 			memset(top5_app_list, 0, sizeof(top5_app_list));
 			update_top5_app(node, top5_app_list);
@@ -578,8 +553,6 @@ static int appfilter_handle_dev_list(struct ubus_context *ctx,
 				json_object_array_add(app_array, app_obj);
 			}
 
-			get_hostname_by_mac(node->mac, hostname);
-
 			json_object_object_add(dev_obj, "applist", app_array);
 			json_object_object_add(dev_obj, "mac",
 					       json_object_new_string(node->mac));
@@ -588,7 +561,7 @@ static int appfilter_handle_dev_list(struct ubus_context *ctx,
 			json_object_object_add(dev_obj, "online",
 					       json_object_new_int(node->online));
 			json_object_object_add(dev_obj, "hostname",
-					       json_object_new_string(hostname));
+					       json_object_new_string(node->hostname));
 			json_object_object_add(dev_obj, "nickname",
 					       json_object_new_string(""));
 			json_object_array_add(dev_array, dev_obj);
