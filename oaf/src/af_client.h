@@ -5,6 +5,7 @@
 #include <linux/rwlock.h>
 #include <linux/list.h>
 #include <linux/timer.h>
+#include <linux/atomic.h>
 #include <linux/in6.h>
 
 #include "app_filter.h"
@@ -22,16 +23,21 @@
 
 extern rwlock_t af_client_lock;
 
+struct af_pending_report {
+	struct list_head list;
+	char *json_str;
+};
+
 enum NFC_PKT_DIR {
 	PKT_DIR_DOWN,
 	PKT_DIR_UP,
 };
 
 typedef struct flow_stat {
-	long long up_bytes;
-	long long down_bytes;
-	long long up_pkts;
-	long long down_pkts;
+	atomic64_t up_bytes;
+	atomic64_t down_bytes;
+	atomic64_t up_pkts;
+	atomic64_t down_pkts;
 } flow_stat_t;
 
 typedef struct flow_rate {
@@ -67,7 +73,6 @@ typedef struct af_client_info {
 	flow_stat_t last_flow;
 	flow_stat_t period_flow;
 	flow_rate_t rate;
-	struct timer_list client_timer;
 	unsigned int visit_app_num;
 	int active_time;
 	int inactive_time;
@@ -90,5 +95,6 @@ af_client_info_t *nf_client_add(unsigned char *mac);
 
 void check_client_expire(void);
 void af_client_list_reset_report_num(void);
+void af_client_do_timer_tick(void);
 
 #endif /* __AF_CLIENT_H__ */
