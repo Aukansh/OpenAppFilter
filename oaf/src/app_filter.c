@@ -41,13 +41,7 @@ MODULE_AUTHOR("destan19@126.com");
 MODULE_DESCRIPTION("app filter module");
 MODULE_VERSION(AF_VERSION);
 
-#define MAX_FEATURE_PORT 65536
-#define PROTO_TCP_IDX 0
-#define PROTO_UDP_IDX 1
-
-static LIST_HEAD(af_feature_global_list);
-static struct list_head feature_hash[2][MAX_FEATURE_PORT];
-static struct list_head feature_fallback[2];
+static LIST_HEAD(af_feature_head);
 static DEFINE_RWLOCK(af_feature_lock);
 
 #define feature_list_read_lock() read_lock_bh(&af_feature_lock)
@@ -56,7 +50,6 @@ static DEFINE_RWLOCK(af_feature_lock);
 #define feature_list_write_unlock() write_unlock_bh(&af_feature_lock)
 
 #define MAX_AF_SUPPORT_DATA_LEN 3000
-#define MAX_DPI_HEADER_LEN 1500
 #define MAX_HOST_LEN 64
 #define MIN_HOST_LEN 4
 #define APPID_QUIC 10
@@ -86,7 +79,6 @@ static int add_app_feature_node(char *feature, int appid, char *name, int proto,
 				port_info_t dport_info, char *host_url, char *request_url, char *dict, char *search_str, int ignore)
 {
 	af_feature_node_t *node;
-	int proto_idx = -1;
 	char *p;
 	char *begin;
 	char pos[128] = {0};
@@ -153,29 +145,8 @@ static int add_app_feature_node(char *feature, int appid, char *name, int proto,
 		node->pos_num++;
 	}
 
-	if (proto == IPPROTO_TCP)
-		proto_idx = PROTO_TCP_IDX;
-	else if (proto == IPPROTO_UDP)
-		proto_idx = PROTO_UDP_IDX;
-
 	feature_list_write_lock();
-	list_add(&node->global_head, &af_feature_global_list);
-
-	if (proto_idx >= 0) {
-		if (dport_info.num == 1 && !dport_info.range_list[0].not &&
-		    dport_info.range_list[0].start == dport_info.range_list[0].end) {
-			int dport = dport_info.range_list[0].start;
-			if (dport >= 0 && dport < MAX_FEATURE_PORT) {
-				list_add(&node->head, &feature_hash[proto_idx][dport]);
-			} else {
-				list_add(&node->head, &feature_fallback[proto_idx]);
-			}
-		} else {
-			list_add(&node->head, &feature_fallback[proto_idx]);
-		}
-	} else {
-		INIT_LIST_HEAD(&node->head);
-	}
+	list_add(&node->head, &af_feature_head);
 	feature_list_write_unlock();
 
 	return 0;
@@ -476,13 +447,9 @@ static void af_clean_feature_list(void)
 	int count = 0;
 
 	feature_list_write_lock();
-	while (!list_empty(&af_feature_global_list)) {
-		node = list_first_entry(&af_feature_global_list, af_feature_node_t, global_head);
-		list_del(&node->global_head);
-
-		if (!list_empty(&node->head)) {
-			list_del(&node->head);
-		}
+	while (!list_empty(&af_feature_head)) {
+		node = list_first_entry(&af_feature_head, af_feature_node_t, head);
+		list_del(&node->head);
 		if (node->compiled_host_re)
 			regexp_free(node->compiled_host_re);
 		if (node->compiled_req_re)
@@ -799,7 +766,7 @@ static char *k_memstr(char *data, char *str, int size)
 static int af_match_by_pos(flow_info_t *flow, af_feature_node_t *node)
 {
 	int i;
-	int pos;
+	unsigned int pos;
 
 	if (!flow || !node)
 		return AF_FALSE;
@@ -811,7 +778,7 @@ static int af_match_by_pos(flow_info_t *flow, af_feature_node_t *node)
 			else
 				pos = node->pos_info[i].pos;
 
-			if (pos < 0 || pos >= flow->l4_len)
+			if (pos >= flow->l4_len)
 				return AF_FALSE;
 
 			if (flow->l4_data[pos] != node->pos_info[i].value)
@@ -894,7 +861,7 @@ static int af_match_one(flow_info_t *flow, af_feature_node_t *node)
 	if (!af_match_port(&node->dport_info, flow->dport))
 		return AF_FALSE;
 
-	if (node->compiled_host_re || node->compiled_req_re) {
+	if (strlen(node->request_url) > 0 || strlen(node->host_url) > 0) {
 		ret = af_match_by_url(flow, node);
 	} else if (node->pos_num > 0) {
 		ret = af_match_by_pos(flow, node);
@@ -946,32 +913,12 @@ static int af_match_quic(flow_info_t *flow)
 static int match_feature(flow_info_t *flow)
 {
 	af_feature_node_t *n, *node;
-	int proto_idx = -1;
-
-	if (flow->l4_protocol == IPPROTO_TCP)
-		proto_idx = PROTO_TCP_IDX;
-	else if (flow->l4_protocol == IPPROTO_UDP)
-		proto_idx = PROTO_UDP_IDX;
 
 	feature_list_read_lock();
-	if (proto_idx >= 0) {
-		if (flow->dport < MAX_FEATURE_PORT) {
-			list_for_each_entry_safe(node, n, &feature_hash[proto_idx][flow->dport], head) {
-				if (af_match_one(flow, node)) {
-					AF_LMT_INFO("match feature (hash), appid=%d, feature = %s\n", node->app_id, node->feature);
-					flow->app_id = node->app_id;
-					flow->ignore = node->ignore;
-					flow->feature = node;
-					strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
-					feature_list_read_unlock();
-					return AF_TRUE;
-				}
-			}
-		}
-
-		list_for_each_entry_safe(node, n, &feature_fallback[proto_idx], head) {
+	if (!list_empty(&af_feature_head)) {
+		list_for_each_entry_safe(node, n, &af_feature_head, head) {
 			if (af_match_one(flow, node)) {
-				AF_LMT_INFO("match feature (fallback), appid=%d, feature = %s\n", node->app_id, node->feature);
+				AF_LMT_INFO("match feature, appid=%d, feature = %s\n", node->app_id, node->feature);
 				flow->app_id = node->app_id;
 				flow->ignore = node->ignore;
 				flow->feature = node;
@@ -981,7 +928,6 @@ static int match_feature(flow_info_t *flow)
 			}
 		}
 	}
-
 	feature_list_read_unlock();
 	return AF_FALSE;
 }
@@ -1253,15 +1199,10 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		}
 
 		if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-			int copy_len = flow.l4_len;
-			if (copy_len > MAX_DPI_HEADER_LEN)
-				copy_len = MAX_DPI_HEADER_LEN;
-			
-			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, copy_len);
+			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
 			if (!flow.l4_data)
 				return NF_ACCEPT;
-			flow.l4_len = copy_len;
-			AF_LMT_DEBUG("##match nonlinear skb (truncated), len = %d\n", flow.l4_len);
+			AF_LMT_DEBUG("##match nonlinear skb, len = %d\n", flow.l4_len);
 			malloc_data = 1;
 		}
 		flow.client_hello = conn->client_hello;
@@ -1470,20 +1411,13 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 				u_int8_t re_dpi_malloc = 0;
 
 				if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-					int copy_len = flow.l4_len;
-					if (copy_len > MAX_DPI_HEADER_LEN)
-						copy_len = MAX_DPI_HEADER_LEN;
-						
-					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, copy_len);
-					if (re_dpi_buf) {
-						flow.l4_len = copy_len;
+					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
+					if (re_dpi_buf)
 						re_dpi_malloc = 1;
-					}
 				}
 
 				if (re_dpi_buf) {
 					unsigned char *saved_l4_data = flow.l4_data;
-					int saved_l4_len = flow.l4_len;
 					flow.l4_data = re_dpi_buf;
 					dpi_main(skb, &flow);
 
@@ -1497,7 +1431,6 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 						AF_LMT_INFO("re-DPI hit: mac=" MAC_FMT " appid=%u name=%s\n", MAC_ARRAY(client_mac), app_id, flow.app_name);
 					}
 					flow.l4_data = saved_l4_data;
-					flow.l4_len = saved_l4_len;
 					memset(&flow.http, 0, sizeof(flow.http));
 					memset(&flow.https, 0, sizeof(flow.https));
 					if (flow.client_hello)
@@ -1541,14 +1474,9 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	}
 
 	if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-		int copy_len = flow.l4_len;
-		if (copy_len > MAX_DPI_HEADER_LEN)
-			copy_len = MAX_DPI_HEADER_LEN;
-			
-		flow.l4_data = read_skb(skb, flow.l4_data - skb->data, copy_len);
+		flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
 		if (!flow.l4_data)
 			return NF_ACCEPT;
-		flow.l4_len = copy_len;
 		malloc_data = 1;
 	}
 	dpi_main(skb, &flow);
@@ -1662,7 +1590,6 @@ static void oaf_timer_func(struct timer_list *t)
 	if (count % 60 == 0)
 		check_client_expire();
 
-	af_client_do_timer_tick();
 	bump_filter_version_if_scalar_changed();
 
 	count++;
@@ -1808,15 +1735,6 @@ static int netlink_oaf_init(void)
 static int __init app_filter_init(void)
 {
 	int err;
-	int i, j;
-
-	INIT_LIST_HEAD(&af_feature_global_list);
-	for (i = 0; i < 2; i++) {
-		INIT_LIST_HEAD(&feature_fallback[i]);
-		for (j = 0; j < MAX_FEATURE_PORT; j++) {
-			INIT_LIST_HEAD(&feature_hash[i][j]);
-		}
-	}
 
 	af_conn_init();
 	netlink_oaf_init();
