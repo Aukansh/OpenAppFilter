@@ -56,6 +56,7 @@ static DEFINE_RWLOCK(af_feature_lock);
 #define feature_list_write_unlock() write_unlock_bh(&af_feature_lock)
 
 #define MAX_AF_SUPPORT_DATA_LEN 3000
+#define MAX_DPI_HEADER_LEN 1500
 #define MAX_HOST_LEN 64
 #define MIN_HOST_LEN 4
 #define APPID_QUIC 10
@@ -944,7 +945,7 @@ static int af_match_quic(flow_info_t *flow)
 
 static int match_feature(flow_info_t *flow)
 {
-	af_feature_node_t *n, *node;
+	af_feature_node_t *node;
 	int proto_idx = -1;
 
 	if (flow->l4_protocol == IPPROTO_TCP)
@@ -1252,10 +1253,15 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		}
 
 		if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
+			int copy_len = flow.l4_len;
+			if (copy_len > MAX_DPI_HEADER_LEN)
+				copy_len = MAX_DPI_HEADER_LEN;
+			
+			flow.l4_data = read_skb(skb, flow.l4_data - skb->data, copy_len);
 			if (!flow.l4_data)
 				return NF_ACCEPT;
-			AF_LMT_DEBUG("##match nonlinear skb, len = %d\n", flow.l4_len);
+			flow.l4_len = copy_len;
+			AF_LMT_DEBUG("##match nonlinear skb (truncated), len = %d\n", flow.l4_len);
 			malloc_data = 1;
 		}
 		flow.client_hello = conn->client_hello;
@@ -1464,13 +1470,20 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 				u_int8_t re_dpi_malloc = 0;
 
 				if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
-					if (re_dpi_buf)
+					int copy_len = flow.l4_len;
+					if (copy_len > MAX_DPI_HEADER_LEN)
+						copy_len = MAX_DPI_HEADER_LEN;
+						
+					re_dpi_buf = read_skb(skb, flow.l4_data - skb->data, copy_len);
+					if (re_dpi_buf) {
+						flow.l4_len = copy_len;
 						re_dpi_malloc = 1;
+					}
 				}
 
 				if (re_dpi_buf) {
 					unsigned char *saved_l4_data = flow.l4_data;
+					int saved_l4_len = flow.l4_len;
 					flow.l4_data = re_dpi_buf;
 					dpi_main(skb, &flow);
 
@@ -1484,6 +1497,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 						AF_LMT_INFO("re-DPI hit: mac=" MAC_FMT " appid=%u name=%s\n", MAC_ARRAY(client_mac), app_id, flow.app_name);
 					}
 					flow.l4_data = saved_l4_data;
+					flow.l4_len = saved_l4_len;
 					memset(&flow.http, 0, sizeof(flow.http));
 					memset(&flow.https, 0, sizeof(flow.https));
 					if (flow.client_hello)
@@ -1527,9 +1541,14 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 	}
 
 	if (skb_is_nonlinear(skb) && flow.l4_len < MAX_AF_SUPPORT_DATA_LEN) {
-		flow.l4_data = read_skb(skb, flow.l4_data - skb->data, flow.l4_len);
+		int copy_len = flow.l4_len;
+		if (copy_len > MAX_DPI_HEADER_LEN)
+			copy_len = MAX_DPI_HEADER_LEN;
+			
+		flow.l4_data = read_skb(skb, flow.l4_data - skb->data, copy_len);
 		if (!flow.l4_data)
 			return NF_ACCEPT;
+		flow.l4_len = copy_len;
 		malloc_data = 1;
 	}
 	dpi_main(skb, &flow);
@@ -1643,6 +1662,7 @@ static void oaf_timer_func(struct timer_list *t)
 	if (count % 60 == 0)
 		check_client_expire();
 
+	af_client_do_timer_tick();
 	bump_filter_version_if_scalar_changed();
 
 	count++;
