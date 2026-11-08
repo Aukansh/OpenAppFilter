@@ -27,7 +27,7 @@ static void *getmem(size_t size)
 {
 	void *tmp;
 
-	tmp = kmalloc(size, GFP_ATOMIC);
+	tmp = kzalloc(size, GFP_ATOMIC);
 	if (!tmp) {
 		printk("malloc failed\n");
 		return NULL;
@@ -39,9 +39,12 @@ static size_t creat_list(char *str, int start, int end)
 {
 	size_t cnt = end - start + 1;
 
+	if (cnt <= 0)
+		return 0;
+
 	for (; start <= end; start++)
 		*str++ = start;
-	return (cnt > 0) ? cnt : 0;
+	return cnt;
 }
 
 static int in_list(char ch, struct regexp_re *regexp)
@@ -61,7 +64,7 @@ void regexp_free(struct regexp_re *regexp)
 
 	for (; regexp; regexp = tmp) {
 		tmp = regexp->next;
-		if (regexp->ccl)
+		if (regexp->type == LIST && regexp->ccl)
 			kfree(regexp->ccl);
 		kfree(regexp);
 	}
@@ -69,7 +72,7 @@ void regexp_free(struct regexp_re *regexp)
 
 struct regexp_re *regexp_compile(char *regexp)
 {
-	struct regexp_re head, *tail, *tmp;
+	struct regexp_re head = {0}, *tail, *tmp;
 	char *pstr;
 	int err_flag = 0;
 
@@ -137,6 +140,7 @@ struct regexp_re *regexp_compile(char *regexp)
 				err_flag = 1;
 				break;
 			}
+			tmp->type = LIST;
 			tmp->nccl = 0;
 			if (*++regexp == '^') {
 				tmp->nccl = 1;
@@ -155,7 +159,13 @@ struct regexp_re *regexp_compile(char *regexp)
 					err_flag = 1;
 					break;
 				}
-				if (pstr + (*(regexp + 1) - *(regexp - 1)) >= tmp->ccl + 255) {
+				if (*(regexp + 1) < *(regexp - 1)) {
+					err_flag = 1;
+					break;
+				}
+
+				int range_len = *(regexp + 1) - *(regexp - 1);
+				if (pstr + range_len >= tmp->ccl + 255) {
 					err_flag = 1;
 					break;
 				}
@@ -166,7 +176,6 @@ struct regexp_re *regexp_compile(char *regexp)
 			*pstr = '\0';
 			if (*regexp == '\0')
 				err_flag = 1;
-			tmp->type = LIST;
 			break;
 		default:
 			tmp->type = CHAR;
