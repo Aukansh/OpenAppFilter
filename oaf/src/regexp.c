@@ -64,7 +64,7 @@ void regexp_free(struct regexp_re *regexp)
 
 	for (; regexp; regexp = tmp) {
 		tmp = regexp->next;
-		if (regexp->type == LIST && regexp->ccl)
+		if (regexp->ccl)
 			kfree(regexp->ccl);
 		kfree(regexp);
 	}
