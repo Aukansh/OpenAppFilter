@@ -41,7 +41,13 @@ MODULE_AUTHOR("destan19@126.com");
 MODULE_DESCRIPTION("app filter module");
 MODULE_VERSION(AF_VERSION);
 
-static LIST_HEAD(af_feature_head);
+#define MAX_FEATURE_PORT 65536
+#define PROTO_TCP_IDX 0
+#define PROTO_UDP_IDX 1
+
+static LIST_HEAD(af_feature_global_list);
+static struct list_head feature_hash[2][MAX_FEATURE_PORT];
+static struct list_head feature_fallback[2];
 static DEFINE_RWLOCK(af_feature_lock);
 
 #define feature_list_read_lock() read_lock_bh(&af_feature_lock)
@@ -79,6 +85,7 @@ static int add_app_feature_node(char *feature, int appid, char *name, int proto,
 				port_info_t dport_info, char *host_url, char *request_url, char *dict, char *search_str, int ignore)
 {
 	af_feature_node_t *node;
+	int proto_idx = -1;
 	char *p;
 	char *begin;
 	char pos[128] = {0};
@@ -145,8 +152,31 @@ static int add_app_feature_node(char *feature, int appid, char *name, int proto,
 		node->pos_num++;
 	}
 
+	INIT_LIST_HEAD(&node->head);
+
+	if (proto == IPPROTO_TCP)
+		proto_idx = PROTO_TCP_IDX;
+	else if (proto == IPPROTO_UDP)
+		proto_idx = PROTO_UDP_IDX;
+
 	feature_list_write_lock();
-	list_add(&node->head, &af_feature_head);
+	list_add(&node->global_head, &af_feature_global_list);
+
+	if (proto_idx >= 0) {
+		if (dport_info.num == 1 && !dport_info.range_list[0].not &&
+		    dport_info.range_list[0].start == dport_info.range_list[0].end) {
+			int dport = dport_info.range_list[0].start;
+			if (dport >= 0 && dport < MAX_FEATURE_PORT) {
+				list_add(&node->head, &feature_hash[proto_idx][dport]);
+			} else {
+				list_add(&node->head, &feature_fallback[proto_idx]);
+			}
+		} else {
+			list_add(&node->head, &feature_fallback[proto_idx]);
+		}
+	} else {
+		list_add(&node->head, &feature_fallback[0]);
+	}
 	feature_list_write_unlock();
 
 	return 0;
@@ -447,9 +477,11 @@ static void af_clean_feature_list(void)
 	int count = 0;
 
 	feature_list_write_lock();
-	while (!list_empty(&af_feature_head)) {
-		node = list_first_entry(&af_feature_head, af_feature_node_t, head);
-		list_del(&node->head);
+	while (!list_empty(&af_feature_global_list)) {
+		node = list_first_entry(&af_feature_global_list, af_feature_node_t, global_head);
+		list_del(&node->global_head);
+
+		list_del_init(&node->head);
 		if (node->compiled_host_re)
 			regexp_free(node->compiled_host_re);
 		if (node->compiled_req_re)
@@ -766,7 +798,7 @@ static char *k_memstr(char *data, char *str, int size)
 static int af_match_by_pos(flow_info_t *flow, af_feature_node_t *node)
 {
 	int i;
-	unsigned int pos;
+	int pos;
 
 	if (!flow || !node)
 		return AF_FALSE;
@@ -861,7 +893,7 @@ static int af_match_one(flow_info_t *flow, af_feature_node_t *node)
 	if (!af_match_port(&node->dport_info, flow->dport))
 		return AF_FALSE;
 
-	if (strlen(node->request_url) > 0 || strlen(node->host_url) > 0) {
+	if (node->compiled_host_re || node->compiled_req_re) {
 		ret = af_match_by_url(flow, node);
 	} else if (node->pos_num > 0) {
 		ret = af_match_by_pos(flow, node);
@@ -913,12 +945,32 @@ static int af_match_quic(flow_info_t *flow)
 static int match_feature(flow_info_t *flow)
 {
 	af_feature_node_t *n, *node;
+	int proto_idx = -1;
+
+	if (flow->l4_protocol == IPPROTO_TCP)
+		proto_idx = PROTO_TCP_IDX;
+	else if (flow->l4_protocol == IPPROTO_UDP)
+		proto_idx = PROTO_UDP_IDX;
 
 	feature_list_read_lock();
-	if (!list_empty(&af_feature_head)) {
-		list_for_each_entry_safe(node, n, &af_feature_head, head) {
+	if (proto_idx >= 0) {
+		if (flow->dport < MAX_FEATURE_PORT) {
+			list_for_each_entry(node, &feature_hash[proto_idx][flow->dport], head) {
+				if (af_match_one(flow, node)) {
+					AF_LMT_INFO("match feature (hash), appid=%d, feature = %s\n", node->app_id, node->feature);
+					flow->app_id = node->app_id;
+					flow->ignore = node->ignore;
+					flow->feature = node;
+					strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
+					feature_list_read_unlock();
+					return AF_TRUE;
+				}
+			}
+		}
+
+		list_for_each_entry(node, &feature_fallback[proto_idx], head) {
 			if (af_match_one(flow, node)) {
-				AF_LMT_INFO("match feature, appid=%d, feature = %s\n", node->app_id, node->feature);
+				AF_LMT_INFO("match feature (fallback), appid=%d, feature = %s\n", node->app_id, node->feature);
 				flow->app_id = node->app_id;
 				flow->ignore = node->ignore;
 				flow->feature = node;
@@ -928,6 +980,7 @@ static int match_feature(flow_info_t *flow)
 			}
 		}
 	}
+
 	feature_list_read_unlock();
 	return AF_FALSE;
 }
@@ -1735,6 +1788,15 @@ static int netlink_oaf_init(void)
 static int __init app_filter_init(void)
 {
 	int err;
+	int i, j;
+
+	INIT_LIST_HEAD(&af_feature_global_list);
+	for (i = 0; i < 2; i++) {
+		INIT_LIST_HEAD(&feature_fallback[i]);
+		for (j = 0; j < MAX_FEATURE_PORT; j++) {
+			INIT_LIST_HEAD(&feature_hash[i][j]);
+		}
+	}
 
 	af_conn_init();
 	netlink_oaf_init();
