@@ -1,26 +1,4 @@
-/*
-Copyright (C) 2020 Derry <destan19@126.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
-// SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: MIT */
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,13 +13,34 @@ THE SOFTWARE.
 
 #define AF_LOG_FILE_MAX_SIZE	(2 * 1024 * 1024)
 
-static app_name_info_t app_name_table[MAX_SUPPORT_APP_NUM];
-static int g_app_count;
-int g_cur_class_num;
-char CLASS_NAME_TABLE[MAX_APP_TYPE][MAX_CLASS_NAME_LEN];
+static int current_log_level = LOG_LEVEL_ERROR;
 
-static pthread_mutex_t af_log_mutex = PTHREAD_MUTEX_INITIALIZER;
-static FILE *af_log_fp;
+typedef struct {
+	app_name_info_t app_name_table[MAX_SUPPORT_APP_NUM];
+	int app_count;
+	char class_name_table[MAX_APP_TYPE][MAX_CLASS_NAME_LEN];
+	int class_count;
+} feature_manager_t;
+
+static feature_manager_t *get_feature_manager(void)
+{
+	static feature_manager_t mgr;
+	return &mgr;
+}
+
+int get_current_log_level(void)
+{
+	return current_log_level;
+}
+
+void set_current_log_level(int level)
+{
+	if (level < LOG_LEVEL_ERROR)
+		level = LOG_LEVEL_ERROR;
+	if (level > LOG_LEVEL_DEBUG)
+		level = LOG_LEVEL_DEBUG;
+	current_log_level = level;
+}
 
 static const char *log_level_str(log_level_t level)
 {
@@ -56,6 +55,9 @@ static const char *log_level_str(log_level_t level)
 
 void af_log(log_level_t level, const char *fmt, ...)
 {
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	static FILE *log_fp = NULL;
+	
 	char time_str[20];
 	struct tm *tm;
 	time_t now;
@@ -65,25 +67,25 @@ void af_log(log_level_t level, const char *fmt, ...)
 	if (level > current_log_level)
 		return;
 
-	pthread_mutex_lock(&af_log_mutex);
+	pthread_mutex_lock(&mutex);
 
-	if (!af_log_fp) {
-		af_log_fp = fopen(LOG_FILE_PATH, "a");
-		if (!af_log_fp) {
-			perror("Failed to open log file");
+	if (!log_fp) {
+		log_fp = fopen(LOG_FILE_PATH, "a");
+		if (!log_fp) {
+			fprintf(stderr, "[af_log] cannot open %s\n", LOG_FILE_PATH);
 			goto unlock;
 		}
 	}
 
-	fseek(af_log_fp, 0, SEEK_END);
-	size = ftell(af_log_fp);
+	fseek(log_fp, 0, SEEK_END);
+	size = ftell(log_fp);
 	if (size > AF_LOG_FILE_MAX_SIZE) {
-		fclose(af_log_fp);
-		af_log_fp = NULL;
+		fclose(log_fp);
+		log_fp = NULL;
 		rename(LOG_FILE_PATH, LOG_FILE_PATH ".1");
-		af_log_fp = fopen(LOG_FILE_PATH, "a");
-		if (!af_log_fp) {
-			perror("Failed to open log file after rotate");
+		log_fp = fopen(LOG_FILE_PATH, "a");
+		if (!log_fp) {
+			fprintf(stderr, "[af_log] cannot reopen %s after rotate\n", LOG_FILE_PATH);
 			goto unlock;
 		}
 	}
@@ -92,22 +94,19 @@ void af_log(log_level_t level, const char *fmt, ...)
 	tm = localtime(&now);
 	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm);
 
-	fprintf(af_log_fp, "[%s] [%s] ", time_str, log_level_str(level));
+	fprintf(log_fp, "[%s] [%s] ", time_str, log_level_str(level));
 	va_start(ap, fmt);
-	vfprintf(af_log_fp, fmt, ap);
+	vfprintf(log_fp, fmt, ap);
 	va_end(ap);
 
 	if (!fmt[0] || fmt[strlen(fmt) - 1] != '\n')
-		fputc('\n', af_log_fp);
+		fputc('\n', log_fp);
 
-	fflush(af_log_fp);
+	fflush(log_fp);
+
 unlock:
-	pthread_mutex_unlock(&af_log_mutex);
+	pthread_mutex_unlock(&mutex);
 }
-
-/* ----------------------------------------------------------------------
- * UCI helpers
- * -------------------------------------------------------------------- */
 
 int af_uci_get_int_value(struct uci_context *ctx, const char *key)
 {
@@ -143,8 +142,7 @@ done:
 	return ret;
 }
 
-int af_uci_get_value(struct uci_context *ctx, const char *key,
-		     char *out, int out_len)
+int af_uci_get_value(struct uci_context *ctx, const char *key, char *out, int out_len)
 {
 	char buf[128];
 	struct uci_ptr ptr;
@@ -211,7 +209,7 @@ int af_uci_add_list(struct uci_context *ctx, const char *key, const char *value)
 	if (!key || !value)
 		return -1;
 	if (strlen(key) + strlen(value) >= sizeof(buf) - 1) {
-		printf("value too long\n");
+		LOG_WARN("af_uci_add_list: key+value too long");
 		return -1;
 	}
 
@@ -250,8 +248,7 @@ int af_uci_add_int_list(struct uci_context *ctx, const char *key, int value)
 	return ret;
 }
 
-int af_uci_get_list_value(struct uci_context *ctx, const char *key,
-			  char *out, int out_len, const char *delim)
+int af_uci_get_list_value(struct uci_context *ctx, const char *key, char *out, int out_len, const char *delim)
 {
 	char buf[128];
 	struct uci_ptr ptr;
@@ -283,7 +280,7 @@ int af_uci_get_list_value(struct uci_context *ctx, const char *key,
 			size_t need = strlen(e->name) + (sep ? dlen : 0);
 
 			if (used + need + 1 > (size_t)out_len) {
-				LOG_WARN("af_uci_get_list_value: output truncated\n");
+				LOG_WARN("af_uci_get_list_value: output truncated");
 				break;
 			}
 			if (sep) {
@@ -303,8 +300,7 @@ done:
 	return ret;
 }
 
-int af_uci_set_value(struct uci_context *ctx, const char *key,
-		     const char *value)
+int af_uci_set_value(struct uci_context *ctx, const char *key, const char *value)
 {
 	char buf[2048];
 	struct uci_ptr ptr;
@@ -314,8 +310,7 @@ int af_uci_set_value(struct uci_context *ctx, const char *key,
 		return -1;
 
 	if (strlen(key) + strlen(value) + 2 > sizeof(buf)) {
-		fprintf(stderr, "af_uci_set_value: key+value too long (%zu+%zu)\n",
-			strlen(key), strlen(value));
+		LOG_WARN("af_uci_set_value: key+value too long (%zu+%zu)", strlen(key), strlen(value));
 		return -1;
 	}
 	snprintf(buf, sizeof(buf), "%s=%s", key, value);
@@ -354,8 +349,7 @@ int af_uci_set_int_value(struct uci_context *ctx, const char *key, int value)
 	return ret;
 }
 
-int af_uci_set_array_value(struct uci_context *ctx, const char *fmt,
-			   int index, const char *value)
+int af_uci_set_array_value(struct uci_context *ctx, const char *fmt, int index, const char *value)
 {
 	char key[128];
 
@@ -363,8 +357,7 @@ int af_uci_set_array_value(struct uci_context *ctx, const char *fmt,
 	return af_uci_set_value(ctx, key, value);
 }
 
-int af_uci_get_array_value(struct uci_context *ctx, const char *fmt,
-			   int index, char *out, int out_len)
+int af_uci_get_array_value(struct uci_context *ctx, const char *fmt, int index, char *out, int out_len)
 {
 	char key[128];
 
@@ -392,8 +385,7 @@ int af_uci_commit(struct uci_context *ctx, const char *package)
 	return ret;
 }
 
-int af_get_uci_list_num(struct uci_context *ctx, const char *package,
-			const char *section)
+int af_get_uci_list_num(struct uci_context *ctx, const char *package, const char *section)
 {
 	struct uci_package *pkg = NULL;
 	struct uci_element *e;
@@ -413,8 +405,7 @@ int af_get_uci_list_num(struct uci_context *ctx, const char *package,
 	return count;
 }
 
-int af_uci_add_section(struct uci_context *ctx, const char *pkg_name,
-		       const char *section)
+int af_uci_add_section(struct uci_context *ctx, const char *pkg_name, const char *section)
 {
 	struct uci_section *s = NULL;
 	struct uci_package *p = NULL;
@@ -435,51 +426,47 @@ done:
 	return ret;
 }
 
-/* ----------------------------------------------------------------------
- * Feature tables
- * -------------------------------------------------------------------- */
-
 char *get_app_name_by_id(int id)
 {
+	feature_manager_t *mgr = get_feature_manager();
 	int i;
 
-	for (i = 0; i < g_app_count; i++)
-		if (id == app_name_table[i].id)
-			return app_name_table[i].name;
+	for (i = 0; i < mgr->app_count; i++)
+		if (id == mgr->app_name_table[i].id)
+			return mgr->app_name_table[i].name;
 	return "";
 }
 
 void init_app_name_table(void)
 {
+	feature_manager_t *mgr = get_feature_manager();
 	char line[2048];
 	FILE *fp;
 
 	fp = fopen("/tmp/feature.cfg", "r");
 	if (!fp) {
-		printf("open file failed\n");
+		LOG_ERROR("init_app_name_table: cannot open /tmp/feature.cfg");
 		return;
 	}
 
-	g_app_count = 0;
+	mgr->app_count = 0;
 	while (fgets(line, sizeof(line), fp)) {
 		char info[128], name[64];
 		char *colon;
 		size_t plen;
 		int id;
 
-		if (strstr(line, "#") || strlen(line) < 10 ||
-		    !strstr(line, ":"))
+		if (strstr(line, "#") || strlen(line) < 10 || !strstr(line, ":"))
 			continue;
-		if (g_app_count >= MAX_SUPPORT_APP_NUM) {
-			LOG_WARN("app count exceeds %d\n", MAX_SUPPORT_APP_NUM);
+		if (mgr->app_count >= MAX_SUPPORT_APP_NUM) {
+			LOG_WARN("app count exceeds %d", MAX_SUPPORT_APP_NUM);
 			break;
 		}
 
 		colon = strstr(line, ":");
 		plen = (size_t)(colon - line);
 		if (plen >= sizeof(info)) {
-			LOG_WARN("feature line prefix too long (%zu), skip\n",
-				 plen);
+			LOG_WARN("feature line prefix too long (%zu), skip", plen);
 			continue;
 		}
 		memcpy(info, line, plen);
@@ -487,41 +474,56 @@ void init_app_name_table(void)
 		if (sscanf(info, "%d %63s", &id, name) != 2)
 			continue;
 
-		app_name_table[g_app_count].id = id;
-		snprintf(app_name_table[g_app_count].name,
-			 sizeof(app_name_table[g_app_count].name), "%s", name);
-		g_app_count++;
+		mgr->app_name_table[mgr->app_count].id = id;
+		snprintf(mgr->app_name_table[mgr->app_count].name,
+			 sizeof(mgr->app_name_table[mgr->app_count].name), "%s", name);
+		mgr->app_count++;
 	}
 	fclose(fp);
 }
 
 void init_app_class_name_table(void)
 {
+	feature_manager_t *mgr = get_feature_manager();
 	char line[2048];
 	FILE *fp;
 
 	fp = fopen("/tmp/app_class.txt", "r");
 	if (!fp) {
-		printf("open file failed\n");
+		LOG_ERROR("init_app_class_name_table: cannot open /tmp/app_class.txt");
 		return;
 	}
 
-	g_cur_class_num = 0;
+	mgr->class_count = 0;
 	while (fgets(line, sizeof(line), fp)) {
 		int id;
 		char name[MAX_CLASS_NAME_LEN];
 
 		if (sscanf(line, "%d %*s %31s", &id, name) != 2) {
-			LOG_WARN("bad app_class line: %s\n", line);
+			LOG_WARN("bad app_class line: %s", line);
 			continue;
 		}
 		if (id < 1 || id > MAX_APP_TYPE) {
-			LOG_WARN("app_class id out of range: %d\n", id);
+			LOG_WARN("app_class id out of range: %d", id);
 			continue;
 		}
-		snprintf(CLASS_NAME_TABLE[id - 1],
-			 sizeof(CLASS_NAME_TABLE[id - 1]), "%s", name);
-		g_cur_class_num++;
+		snprintf(mgr->class_name_table[id - 1],
+			 sizeof(mgr->class_name_table[id - 1]), "%s", name);
+		mgr->class_count++;
 	}
 	fclose(fp);
+}
+
+int get_class_count(void)
+{
+	return get_feature_manager()->class_count;
+}
+
+const char *get_class_name_by_id(int id)
+{
+	feature_manager_t *mgr = get_feature_manager();
+	
+	if (id < 0 || id >= MAX_APP_TYPE)
+		return "";
+	return mgr->class_name_table[id];
 }
