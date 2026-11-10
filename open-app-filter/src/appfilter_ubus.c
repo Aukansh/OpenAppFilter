@@ -2058,6 +2058,7 @@ static int handle_get_oaf_status(struct ubus_context *ctx, struct ubus_object *o
 	struct json_object *response = json_object_new_object();
 	struct json_object *data_obj = json_object_new_object();
 	char result[128] = {0};
+	char engine_version[128] = {0};
 	char kernel_version[128] = {0};
 	struct uci_context *uci_ctx;
 	time_t now;
@@ -2087,9 +2088,9 @@ static int handle_get_oaf_status(struct ubus_context *ctx, struct ubus_object *o
 		json_object_object_add(data_obj, "disable_hnat", json_object_new_int(0));
 	}
 
-	ret = exec_with_result_line("cat /proc/sys/oaf/version", kernel_version, sizeof(kernel_version));
+	ret = exec_with_result_line("cat /proc/sys/oaf/version", engine_version, sizeof(engine_version));
 	if (ret >= 0)
-		json_object_object_add(data_obj, "engine_version", json_object_new_string(kernel_version));
+		json_object_object_add(data_obj, "engine_version", json_object_new_string(engine_version));
 	else
 		json_object_object_add(data_obj, "engine_version", json_object_new_string(""));
 
