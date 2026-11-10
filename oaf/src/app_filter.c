@@ -82,6 +82,20 @@ char *ipv6_to_str(const struct in6_addr *addr, char *str)
 	return str;
 }
 
+static bool is_regex_pattern(const char *str)
+{
+	if (!str || !*str)
+		return false;
+	while (*str) {
+		if (*str == '*' || *str == '+' ||
+		    *str == '[' || *str == ']' || *str == '^' ||
+		    *str == '$' || *str == '\\')
+			return true;
+		str++;
+	}
+	return false;
+}
+
 static int add_app_feature_node(char *feature, int appid, char *name, int proto, int src_port,
 				port_info_t dport_info, char *host_url, char *request_url, char *dict, char *search_str, int ignore)
 {
@@ -92,6 +106,7 @@ static int add_app_feature_node(char *feature, int appid, char *name, int proto,
 	char pos[128] = {0};
 	int index;
 	int value;
+	int regexp_failed = 0;
 
 	node = kzalloc(sizeof(*node), GFP_ATOMIC);
 	if (!node) {
@@ -110,15 +125,37 @@ static int add_app_feature_node(char *feature, int appid, char *name, int proto,
 	node->ignore = ignore;
 	snprintf(node->feature, sizeof(node->feature), "%s", feature);
 
-	if (strlen(host_url) > 0)
+	node->compiled_host_re = NULL;
+	node->compiled_req_re = NULL;
+
+	if (strlen(host_url) > 0 && is_regex_pattern(host_url)) {
 		node->compiled_host_re = regexp_compile(host_url);
-	else
-		node->compiled_host_re = NULL;
-		
-	if (strlen(request_url) > 0)
+		if (!node->compiled_host_re) {
+			AF_ERROR("regexp compile failed for host_url '%s' "
+				 "(appid=%d, feature='%s'), drop feature\n",
+				 host_url, appid, feature);
+			regexp_failed = 1;
+		}
+	}
+
+	if (strlen(request_url) > 0 && is_regex_pattern(request_url)) {
 		node->compiled_req_re = regexp_compile(request_url);
-	else
-		node->compiled_req_re = NULL;
+		if (!node->compiled_req_re) {
+			AF_ERROR("regexp compile failed for request_url '%s' "
+				 "(appid=%d, feature='%s'), drop feature\n",
+				 request_url, appid, feature);
+			regexp_failed = 1;
+		}
+	}
+
+	if (regexp_failed) {
+		if (node->compiled_host_re)
+			regexp_free(node->compiled_host_re);
+		if (node->compiled_req_re)
+			regexp_free(node->compiled_req_re);
+		kfree(node);
+		return -1;
+	}
 
 	if (ignore)
 		AF_DEBUG("add feature %s, ignore = %d\n", feature, ignore);
@@ -852,9 +889,18 @@ static int af_match_by_url(flow_info_t *flow, af_feature_node_t *node)
 			strncpy(reg_url_buf, flow->http.host_pos, flow->http.host_len);
 	}
 
-	if (strlen(reg_url_buf) > 0 && node->compiled_host_re && regexp_match_compiled(node->compiled_host_re, reg_url_buf) == 1) {
-		AF_DEBUG("match url:%s reg = %s, appid=%d\n", reg_url_buf, node->host_url, node->app_id);
-		return AF_TRUE;
+	if (strlen(reg_url_buf) > 0) {
+		bool matched = false;
+		if (node->compiled_host_re) {
+			matched = regexp_match_compiled(node->compiled_host_re, reg_url_buf);
+		} else if (strlen(node->host_url) > 0) {
+			matched = (k_memstr(reg_url_buf, node->host_url, strlen(reg_url_buf)) != NULL);
+		}
+		
+		if (matched) {
+			AF_DEBUG("match url:%s (rule:%s) appid=%d\n", reg_url_buf, node->host_url, node->app_id);
+			return AF_TRUE;
+		}
 	}
 
 	// match request url
@@ -865,9 +911,18 @@ static int af_match_by_url(flow_info_t *flow, af_feature_node_t *node)
 		else
 			strncpy(reg_url_buf, flow->http.url_pos, flow->http.url_len);
 
-		if (strlen(reg_url_buf) > 0 && node->compiled_req_re && regexp_match_compiled(node->compiled_req_re, reg_url_buf) == 1) {
-			AF_DEBUG("match request:%s reg:%s appid=%d\n", reg_url_buf, node->request_url, node->app_id);
-			return AF_TRUE;
+		if (strlen(reg_url_buf) > 0) {
+			bool matched = false;
+			if (node->compiled_req_re) {
+				matched = regexp_match_compiled(node->compiled_req_re, reg_url_buf);
+			} else if (strlen(node->request_url) > 0) {
+				matched = (k_memstr(reg_url_buf, node->request_url, strlen(reg_url_buf)) != NULL);
+			}
+			
+			if (matched) {
+				AF_DEBUG("match request:%s (rule:%s) appid=%d\n", reg_url_buf, node->request_url, node->app_id);
+				return AF_TRUE;
+			}
 		}
 	}
 	return AF_FALSE;
@@ -894,7 +949,7 @@ static int af_match_one(flow_info_t *flow, af_feature_node_t *node)
 	if (!af_match_port(&node->dport_info, flow->dport))
 		return AF_FALSE;
 
-	if (node->compiled_host_re || node->compiled_req_re) {
+	if (node->compiled_host_re || node->compiled_req_re || strlen(node->host_url) > 0 || strlen(node->request_url) > 0) {
 		ret = af_match_by_url(flow, node);
 	} else if (node->pos_num > 0) {
 		ret = af_match_by_pos(flow, node);
@@ -1042,9 +1097,10 @@ static int af_update_client_app_info(af_client_info_t *node, int app_id, int dro
 	if (!node)
 		return -1;
 
+	spin_lock_bh(&node->visit_lock);
 	index = af_get_visit_index(node, app_id);
 	if (index < 0 || index >= MAX_RECORD_APP_NUM)
-		return 0;
+		goto unlock;
 
 	node->visit_info[index].total_num++;
 	if (drop)
@@ -1063,6 +1119,9 @@ static int af_update_client_app_info(af_client_info_t *node, int app_id, int dro
 			cnt++;
 	}
 	node->visit_app_num = cnt;
+
+unlock:
+	spin_unlock_bh(&node->visit_lock);
 	return 0;
 }
 
@@ -1070,11 +1129,11 @@ static void af_update_client_app_info_by_mac(u_int8_t *mac, int app_id, int drop
 {
 	af_client_info_t *node;
 
-	AF_CLIENT_LOCK_W();
+	AF_CLIENT_LOCK_R();
 	node = find_af_client(mac);
 	if (node)
 		af_update_client_app_info(node, app_id, drop);
-	AF_CLIENT_UNLOCK_W();
+	AF_CLIENT_UNLOCK_R();
 }
 
 static int af_match_local_packet(flow_info_t *f)
@@ -1204,9 +1263,9 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		return NF_ACCEPT;
 	}
 	memcpy(client_mac, client->mac, ETH_ALEN);
-	client->update_jiffies = jiffies;
+	WRITE_ONCE(client->update_jiffies, jiffies);
 	if (flow.src)
-		client->ip = flow.src;
+		af_client_update_ip(client, flow.src);
 	AF_CLIENT_UNLOCK_W();
 
 	conn = af_conn_get_and_update(flow.src, flow.dst, flow.sport, flow.dport, flow.l4_protocol);
@@ -1377,7 +1436,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		return NF_ACCEPT;
 	}
 	memcpy(client_mac, client->mac, ETH_ALEN);
-	client->update_jiffies = jiffies;
+	WRITE_ONCE(client->update_jiffies, jiffies);
 	AF_CLIENT_UNLOCK_R();
 
 	if (ct->mark != 0) {
