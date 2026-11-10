@@ -76,6 +76,9 @@ struct regexp_re *regexp_compile(char *regexp)
 	char *pstr;
 	int err_flag = 0;
 
+	if (!regexp || !*regexp)
+		return NULL;
+
 	for (tail = &head; *regexp != '\0' && err_flag == 0; regexp++) {
 		if (tail == &head && (*regexp == '*' || *regexp == '+' || *regexp == '?')) {
 			return NULL;
@@ -89,6 +92,10 @@ struct regexp_re *regexp_compile(char *regexp)
 		switch (*regexp) {
 		case '\\':
 			regexp++;
+			if (*regexp == '\0') {
+				err_flag = 1;
+				break;
+			}
 			if (*regexp == 'd') {
 				tmp->type = LIST;
 				tmp->nccl = 0;
@@ -263,7 +270,7 @@ int regexp_match_compiled(struct regexp_re *regexp, char *text)
 {
 	int ret;
 
-	if (!regexp)
+	if (!regexp || !text)
 		return 0;
 
 	if (regexp->type == BEGIN) {
@@ -281,9 +288,14 @@ int regexp_match_compiled(struct regexp_re *regexp, char *text)
 
 int regexp_match(char *reg, char *text)
 {
-	struct regexp_re *regexp = regexp_compile(reg);
+	struct regexp_re *regexp;
 	int ret = 0;
-	
+
+	if (!reg || !text)
+		return 0;
+
+	regexp = regexp_compile(reg);
+
 	if (regexp) {
 		ret = regexp_match_compiled(regexp, text);
 		regexp_free(regexp);
