@@ -38,19 +38,38 @@ int g_feature_update_time;
 static volatile sig_atomic_t g_feature_update;
 static int g_force_disconnect_hold;
 
-static struct uloop_fd appfilter_nl_fd = {
-	.cb = appfilter_nl_handler,
-};
-
-static struct uloop_timeout dev_tm = {
-	.cb = oaf_timeout_handler,
-};
-
 typedef struct {
 	int is_morning;
 	int *total_active;
 	int *selected_count;
 } shared_arg_t;
+
+typedef struct {
+	int is_morning;
+	int max_allowed_time;
+	int any_blocked;
+} indep_arg_t;
+
+typedef struct {
+	struct tm *cur_tm;
+	int *cur_blocked;
+} mode3_arg_t;
+
+typedef struct {
+	int *count;
+} count_blocked_arg_t;
+
+typedef struct {
+	char *buf;
+	int pos;
+	int first;
+	int max_size;
+	int overflow;
+} sync_mac_arg_t;
+
+static struct uloop_fd appfilter_nl_fd = {
+	.cb = appfilter_nl_handler,
+};
 
 static void shared_period_cb(void *arg, dev_node_t *node)
 {
@@ -62,12 +81,6 @@ static void shared_period_cb(void *arg, dev_node_t *node)
 	}
 	node->blocked = 0;
 }
-
-typedef struct {
-	int is_morning;
-	int max_allowed_time;
-	int any_blocked;
-} indep_arg_t;
 
 static void indep_period_cb(void *arg, dev_node_t *node)
 {
@@ -84,34 +97,6 @@ static void indep_period_cb(void *arg, dev_node_t *node)
 		node->blocked = 0;
 	}
 }
-
-typedef struct {
-	struct tm *cur_tm;
-	int *cur_blocked;
-} mode3_arg_t;
-
-static void mode3_status_cb(void *arg, dev_node_t *node)
-{
-	mode3_arg_t *m = arg;
-	if (!node->is_selected || strlen(node->custom_time_json) == 0) {
-		node->blocked = node->is_selected ? 1 : 0;
-	} else {
-		struct json_object *jobj = json_tokener_parse(node->custom_time_json);
-		if (jobj) {
-			struct json_object *mode_obj = json_object_object_get(jobj, "mode");
-			int dev_mode = mode_obj ? json_object_get_int(mode_obj) : -1;
-			if (dev_mode == 0) node->blocked = calc_device_fixed(jobj, m->cur_tm);
-			else if (dev_mode == 1) node->blocked = calc_device_dynamic(jobj, node, m->cur_tm);
-			else if (dev_mode == 2) node->blocked = calc_device_daily(jobj, node, m->cur_tm);
-			json_object_put(jobj);
-		}
-	}
-	if (node->is_selected && node->blocked) (*m->cur_blocked)++;
-}
-
-typedef struct {
-	int *count;
-} count_blocked_arg_t;
 
 static void count_blocked_cb(void *arg, dev_node_t *node)
 {
@@ -130,14 +115,6 @@ static void block_selected_cb(void *arg, dev_node_t *node)
 	(void)arg;
 	node->blocked = node->is_selected ? 1 : 0;
 }
-
-typedef struct {
-	char *buf;
-	int pos;
-	int first;
-	int max_size;
-	int overflow;
-} sync_mac_arg_t;
 
 static void sync_blocked_macs_cb(void *arg, dev_node_t *node)
 {
@@ -945,6 +922,25 @@ static int calc_device_daily(struct json_object *jobj, dev_node_t *node, struct 
 	return (used >= limit) ? 1 : 0;
 }
 
+static void mode3_status_cb(void *arg, dev_node_t *node)
+{
+	mode3_arg_t *m = arg;
+	if (!node->is_selected || strlen(node->custom_time_json) == 0) {
+		node->blocked = node->is_selected ? 1 : 0;
+	} else {
+		struct json_object *jobj = json_tokener_parse(node->custom_time_json);
+		if (jobj) {
+			struct json_object *mode_obj = json_object_object_get(jobj, "mode");
+			int dev_mode = mode_obj ? json_object_get_int(mode_obj) : -1;
+			if (dev_mode == 0) node->blocked = calc_device_fixed(jobj, m->cur_tm);
+			else if (dev_mode == 1) node->blocked = calc_device_dynamic(jobj, node, m->cur_tm);
+			else if (dev_mode == 2) node->blocked = calc_device_daily(jobj, node, m->cur_tm);
+			json_object_put(jobj);
+		}
+	}
+	if (node->is_selected && node->blocked) (*m->cur_blocked)++;
+}
+
 static void update_oaf_status(void)
 {
 	static int last_ret = -1;
@@ -1174,6 +1170,10 @@ static void oaf_timeout_handler(struct uloop_timeout *t)
 	count++;
 	uloop_timeout_set(t, TICK_INTERVAL_MS);
 }
+
+static struct uloop_timeout dev_tm = {
+	.cb = oaf_timeout_handler,
+};
 
 static void af_load_engine(void)
 {
