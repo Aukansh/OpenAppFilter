@@ -1,38 +1,34 @@
-// SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: MIT */
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
-#include <unistd.h>
 
 #include "utils.h"
 
 char *str_trim(char *s)
 {
 	char *start, *end;
-	size_t n, len;
+	size_t len;
 
 	if (!s)
-		return s;
-
-	n = strlen(s);
-	if (n == 0)
-		return s;
+		return NULL;
 
 	start = s;
 	while (isspace((unsigned char)*start))
 		start++;
 
-	end = s + n - 1;
-	while (end > start && isspace((unsigned char)*end))
+	end = start + strlen(start);
+	while (end > start && isspace((unsigned char)*(end - 1)))
 		end--;
 
-	if (s != start || end != s + n - 1) {
-		len = (size_t)(end - start + 1);
+	len = (size_t)(end - start);
+
+	if (start != s) {
 		memmove(s, start, len);
-		s[len] = '\0';
 	}
+	s[len] = '\0';
+
 	return s;
 }
 
@@ -51,7 +47,8 @@ int exec_with_result_line(const char *cmd, char *result, int len)
 		result[0] = '\0';
 
 	str_trim(result);
-	pclose(fp);
+	(void)pclose(fp);
+	
 	return 0;
 }
 
@@ -60,7 +57,7 @@ unsigned int get_timestamp(void)
 	struct timeval tv;
 
 	gettimeofday(&tv, NULL);
-	return tv.tv_sec;
+	return (unsigned int)tv.tv_sec;
 }
 
 int af_read_file_value(const char *path, char *value, int len)
@@ -75,7 +72,7 @@ int af_read_file_value(const char *path, char *value, int len)
 	if (!file)
 		return -1;
 
-	if (!fgets(value, len, file)) {
+	if (!fgets(value, (int)len, file)) {
 		fclose(file);
 		return -2;
 	}

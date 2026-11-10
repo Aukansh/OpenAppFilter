@@ -1,30 +1,11 @@
-/*
-Copyright (C) 2020 Derry <destan19@126.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
 /* SPDX-License-Identifier: MIT */
 #ifndef _APPFILTER_USER_H
 #define _APPFILTER_USER_H
 
-#include <sys/types.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "appfilter.h"
 
 #define MAX_IP_LEN		32
 #define MAX_MAC_LEN		32
@@ -34,8 +15,6 @@ THE SOFTWARE.
 #define MAX_NICKNAME_SIZE	64
 #define MAX_REPORT_URL_LEN	64
 #define MAX_APP_STAT_NUM	8
-#define MAX_APP_TYPE		32
-#define MAX_APP_ID_NUM		512
 #define SECONDS_PER_DAY		(24 * 3600)
 
 #define OAF_VISIT_LIST_FILE	"/tmp/visit_list"
@@ -44,15 +23,15 @@ THE SOFTWARE.
 
 typedef struct visit_info {
 	int appid;
-	u_int32_t first_time;
-	u_int32_t latest_time;
+	uint32_t first_time;
+	uint32_t latest_time;
 	int action;
 	int expire;
 	struct visit_info *next;
 } visit_info_t;
 
 typedef struct visit_stat {
-	u_int32_t total_time;
+	uint32_t total_time;
 } visit_stat_t;
 
 typedef struct dev_time_status {
@@ -73,23 +52,23 @@ typedef struct dev_node {
 	char nickname[MAX_NICKNAME_SIZE];
 	int online;
 	int expire;
-	u_int32_t offline_time;
-	u_int32_t online_time;
+	uint32_t offline_time;
+	uint32_t online_time;
 	visit_info_t *visit_htable[MAX_VISIT_HASH_SIZE];
 	visit_stat_t stat[MAX_APP_TYPE][MAX_APP_ID_NUM];
 	char visiting_url[MAX_REPORT_URL_LEN];
 	int visiting_app;
 	int is_whitelist;
-	u_int32_t up_rate;
-	u_int32_t down_rate;
-	u_int64_t today_up_bytes;
-	u_int64_t today_down_bytes;
-	u_int64_t last_up_bytes;
-	u_int64_t last_down_bytes;
+	uint32_t up_rate;
+	uint32_t down_rate;
+	uint64_t today_up_bytes;
+	uint64_t today_down_bytes;
+	uint64_t last_up_bytes;
+	uint64_t last_down_bytes;
 	int active;
-	u_int32_t today_am_active_time;
-	u_int32_t today_pm_active_time;
-	u_int32_t last_check_sec;
+	uint32_t today_am_active_time;
+	uint32_t today_pm_active_time;
+	uint32_t last_check_sec;
 	int is_selected;
 	int blocked;
 	char custom_time_json[1024];
@@ -109,8 +88,6 @@ struct app_visit_stat_info {
 };
 
 typedef void (*iter_func)(void *arg, dev_node_t *dev);
-
-extern dev_node_t *dev_hash_table[MAX_DEV_NODE_HASH_SIZE];
 
 dev_node_t *add_dev_node(char *mac);
 void init_dev_node_htable(void);
@@ -138,4 +115,4 @@ void update_dev_online_status(void);
 void mac_copy_lower(char *dst, const char *src, size_t dst_len);
 void dump_dev_list(void);
 
-#endif
+#endif /* _APPFILTER_USER_H */

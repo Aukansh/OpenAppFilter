@@ -1,26 +1,4 @@
-/*
-Copyright (C) 2020 Derry <destan19@126.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
-// SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: MIT */
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,10 +18,11 @@ THE SOFTWARE.
 #define MAX_NL_RCV_BUF_SIZE	4096
 #define MAX_NL_MSG_LEN		1024
 #define REPORT_INTERVAL_SECS	60
+#define AF_FEATURE_GRACE_SEC	300
 #define AF_MSG_MAGIC		0xa0b0c0d0
 
 static void parse_visit_array(dev_node_t *node, struct json_object *visit_array,
-			      u_int32_t cur_time)
+			      uint32_t cur_time)
 {
 	int n = json_object_array_length(visit_array);
 	int i;
@@ -62,9 +41,9 @@ static void parse_visit_array(dev_node_t *node, struct json_object *visit_array,
 		appid = json_object_get_int(appid_obj);
 		action = json_object_get_int(action_obj);
 
-		if (cur_time - g_feature_update_time < 300) {
+		if (cur_time - g_feature_update_time < AF_FEATURE_GRACE_SEC) {
 			if (!strlen(get_app_name_by_id(appid))) {
-				LOG_INFO("ignore unknown appid %d\n", appid);
+				LOG_DEBUG("ignore unknown appid %d", appid);
 				continue;
 			}
 		}
@@ -102,7 +81,7 @@ static void parse_visit_array(dev_node_t *node, struct json_object *visit_array,
 void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 {
 	char buf[MAX_NL_RCV_BUF_SIZE];
-	u_int32_t cur_time = get_timestamp();
+	uint32_t cur_time = get_timestamp();
 	struct sockaddr_nl nladdr;
 	struct iovec iov;
 	struct msghdr msg;
@@ -129,7 +108,7 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 	if (ret <= 0)
 		return;
 	if (ret < (int)sizeof(struct nlmsghdr) || ret >= MAX_NL_RCV_BUF_SIZE) {
-		printf("netlink bad read: %d\n", ret);
+		LOG_WARN("netlink bad read: %d", ret);
 		return;
 	}
 	buf[ret] = '\0';
@@ -137,36 +116,35 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 	h = (struct nlmsghdr *)buf;
 	if (h->nlmsg_len < sizeof(struct nlmsghdr) + sizeof(struct af_msg_hdr) ||
 	    (int)h->nlmsg_len > ret) {
-		printf("netlink invalid nlmsg_len=%u (ret=%d)\n",
-		       h->nlmsg_len, ret);
+		LOG_WARN("netlink invalid nlmsg_len=%u (ret=%d)", h->nlmsg_len, ret);
 		return;
 	}
 
 	kmsg = (char *)NLMSG_DATA(h);
 	af_hdr = (struct af_msg_hdr *)kmsg;
 	if (af_hdr->magic != AF_MSG_MAGIC) {
-		printf("magic error %x\n", af_hdr->magic);
+		LOG_WARN("netlink magic error 0x%x", af_hdr->magic);
 		return;
 	}
 	if (af_hdr->len <= 0 || af_hdr->len >= MAX_OAF_NETLINK_MSG_LEN) {
-		printf("data len error\n");
+		LOG_WARN("netlink data len error: %d", af_hdr->len);
 		return;
 	}
 
 	kdata = kmsg + sizeof(struct af_msg_hdr);
 	kdata_off = (size_t)(kdata - buf);
 	if (kdata_off + (size_t)af_hdr->len >= sizeof(buf)) {
-		printf("netlink data offset overflow\n");
+		LOG_WARN("netlink data offset overflow");
 		return;
 	}
 	kdata[af_hdr->len] = '\0';
 
 	root = json_tokener_parse(kdata);
 	if (!root) {
-		printf("parse json failed:%s", kdata);
+		LOG_WARN("netlink parse json failed: %s", kdata);
 		return;
 	}
-	LOG_DEBUG("report %s\n", kdata);
+	LOG_DEBUG("netlink report %s", kdata);
 
 	visit_array = NULL;
 	{
@@ -186,8 +164,7 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 
 		obj = json_object_object_get(root, "ip");
 		if (obj)
-			strncpy(node->ip, json_object_get_string(obj),
-				sizeof(node->ip));
+			snprintf(node->ip, sizeof(node->ip), "%s", json_object_get_string(obj));
 
 		obj = json_object_object_get(root, "active");
 		if (obj)
@@ -195,13 +172,11 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 
 		obj = json_object_object_get(root, "up_flow");
 		if (obj)
-			node->today_up_bytes +=
-				(unsigned long long)json_object_get_int64(obj) * 1024;
+			node->today_up_bytes += (uint64_t)json_object_get_int64(obj) * 1024;
 
 		obj = json_object_object_get(root, "down_flow");
 		if (obj)
-			node->today_down_bytes +=
-				(unsigned long long)json_object_get_int64(obj) * 1024;
+			node->today_down_bytes += (uint64_t)json_object_get_int64(obj) * 1024;
 
 		visit_array = json_object_object_get(root, "visit_info");
 		if (visit_array)
@@ -259,7 +234,7 @@ int appfilter_nl_init(void)
 
 	fd = socket(AF_NETLINK, SOCK_RAW, OAF_NETLINK_ID);
 	if (fd < 0) {
-		LOG_DEBUG("netlink socket failed: %s\n", strerror(errno));
+		LOG_DEBUG("netlink socket failed: %s", strerror(errno));
 		return -1;
 	}
 
@@ -269,7 +244,7 @@ int appfilter_nl_init(void)
 	nls.nl_family = AF_NETLINK;
 
 	if (bind(fd, (void *)&nls, sizeof(nls))) {
-		LOG_DEBUG("netlink bind failed: %s\n", strerror(errno));
+		LOG_DEBUG("netlink bind failed: %s", strerror(errno));
 		close(fd);
 		return -1;
 	}
