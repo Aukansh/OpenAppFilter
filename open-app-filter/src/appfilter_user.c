@@ -317,10 +317,18 @@ static void update_dev_from_kernel(void)
 	fclose(fp);
 }
 
+static void clean_dev_custom_time_iter(void *arg, dev_node_t *node)
+{
+	(void)arg;
+	node->custom_time_json[0] = '\0';
+}
+
 static void update_dev_custom_time(void)
 {
 	struct uci_context *ctx = uci_alloc_context();
 	if (!ctx) return;
+
+	dev_foreach(NULL, clean_dev_custom_time_iter);
 
 	int num = af_get_uci_list_num(ctx, "appfilter", "device_time");
 	for (int i = 0; i < num; i++) {

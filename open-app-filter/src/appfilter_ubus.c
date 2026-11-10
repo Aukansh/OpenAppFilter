@@ -1733,6 +1733,7 @@ static int handle_del_app_filter_user(struct ubus_context *ctx, struct ubus_obje
 				dev->today_down_bytes = 0;
 				dev->last_up_bytes = 0;
 				dev->last_down_bytes = 0;
+				dev->custom_time_json[0] = '\0';
 				sync_blocked_macs_to_kernel();
 			}
 			break;
