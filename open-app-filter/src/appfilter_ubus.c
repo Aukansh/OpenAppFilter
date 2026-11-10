@@ -2148,6 +2148,21 @@ static int handle_del_app_filter_user(struct ubus_context *ctx,
 		}
 	}
 
+	int device_time_num = af_get_uci_list_num(uci_ctx, "appfilter", "device_time");
+	for (i = device_time_num - 1; i >= 0; i--) {
+		char dev_mac[128] = {0};
+		char key[128] = {0};
+		snprintf(key, sizeof(key), "appfilter.@device_time[%d].mac", i);
+		af_uci_get_value(uci_ctx, key, dev_mac, sizeof(dev_mac));
+		
+		if (!strcasecmp(dev_mac, json_object_get_string(mac_obj))) {
+			char buf[128] = {0};
+			snprintf(buf, sizeof(buf), "appfilter.@device_time[%d]", i);
+			af_uci_delete(uci_ctx, buf);
+			LOG_INFO("Deleted device_time for mac: %s\n", dev_mac);
+		}
+	}
+
 	af_uci_commit(uci_ctx, "appfilter");
 	reload_oaf_rule();
 	g_oaf_config_change = 1;
