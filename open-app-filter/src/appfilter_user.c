@@ -152,12 +152,107 @@ void dev_foreach(void *arg, iter_func iter)
 	}
 }
 
+static bool is_target_interface(const char *device, const char *target_iface, const char *user_iface)
+{
+	if (strstr(device, "wan") || strstr(device, "pppoe")) {
+		return false;
+	}
+
+	if (strcmp(device, target_iface) == 0 || strcmp(device, user_iface) == 0) {
+		return true;
+	}
+
+	size_t len = strlen(user_iface);
+	if (strncmp(device, user_iface, len) == 0) {
+		char next_char = device[len];
+		if (next_char == '\0' || next_char == '.') {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void update_node_from_json(const char *mac_key, struct json_object *val)
+{
+	dev_node_t *node = find_dev_node((char *)mac_key);
+	if (!node) {
+		node = add_dev_node((char *)mac_key);
+		if (!node) return;
+		node->online = 0;
+		node->offline_time = get_timestamp();
+	}
+
+	struct json_object *name_obj;
+	if (json_object_object_get_ex(val, "name", &name_obj)) {
+		const char *name = json_object_get_string(name_obj);
+		if (name && name[0]) {
+			snprintf(node->hostname, sizeof(node->hostname), "%s", name);
+		}
+	}
+
+	struct json_object *ipaddrs_obj;
+	if (json_object_object_get_ex(val, "ipaddrs", &ipaddrs_obj) && json_object_array_length(ipaddrs_obj) > 0) {
+		const char *ip = json_object_get_string(json_object_array_get_idx(ipaddrs_obj, 0));
+		if (ip && ip[0]) {
+			snprintf(node->ip, sizeof(node->ip), "%s", ip);
+		}
+	}
+}
+
 static void update_dev_hostname(void)
 {
-	FILE *fp;
-	char buf[16384] = {0};
-	struct json_object *root, *name_obj, *ipaddrs_obj;
-	size_t read_bytes;
+	const char *user_iface = g_af_config.global.lan_ifname;
+	if (!user_iface[0]) user_iface = "br-lan";
+
+	char bridge_iface[64] = {0};
+	char link_path[128];
+	char link_target[128];
+
+	snprintf(link_path, sizeof(link_path), "/sys/class/net/%s/brport/bridge", user_iface);
+	ssize_t len = readlink(link_path, link_target, sizeof(link_target) - 1);
+	const char *target_iface = user_iface;
+	if (len > 0) {
+		link_target[len] = '\0';
+		const char *basename = strrchr(link_target, '/');
+		if (basename && *(basename + 1)) {
+			snprintf(bridge_iface, sizeof(bridge_iface), "%s", basename + 1);
+			target_iface = bridge_iface;
+		}
+	}
+
+	char local_mac[32] = {0};
+	snprintf(link_path, sizeof(link_path), "/sys/class/net/%s/address", target_iface);
+	FILE *fp = fopen(link_path, "r");
+	if (fp) {
+		if (fgets(local_mac, sizeof(local_mac), fp)) {
+			local_mac[strcspn(local_mac, "\r\n")] = '\0'; 
+		}
+		fclose(fp);
+	}
+
+	char valid_macs[128][32];
+	int valid_count = 0;
+	fp = fopen("/proc/net/arp", "r");
+	if (fp) {
+		char line[256];
+		fgets(line, sizeof(line), fp);
+		while (valid_count < 128 && fgets(line, sizeof(line), fp)) {
+			char ip[32], mac[32], device[32];
+			unsigned int flags;
+			if (sscanf(line, "%31s %*s %x %31s %*s %31s", ip, &flags, mac, device) == 4) {
+				if (local_mac[0] && strcasecmp(mac, local_mac) == 0) {
+					continue;
+				}
+				if (is_target_interface(device, target_iface, user_iface)) {
+					snprintf(valid_macs[valid_count++], 32, "%s", mac);
+				}
+			}
+		}
+		fclose(fp);
+	}
+
+	if (valid_count == 0) return;
 
 	fp = popen("ubus call luci-rpc getHostHints", "r");
 	if (!fp) {
@@ -165,42 +260,23 @@ static void update_dev_hostname(void)
 		return;
 	}
 
-	read_bytes = fread(buf, 1, sizeof(buf) - 1, fp);
+	char buf[16384] = {0};
+	size_t read_bytes = fread(buf, 1, sizeof(buf) - 1, fp);
 	pclose(fp);
 
-	if (read_bytes == 0) {
-		return;
-	}
+	if (read_bytes == 0) return;
 
-	root = json_tokener_parse(buf);
+	struct json_object *root = json_tokener_parse(buf);
 	if (!root) {
 		LOG_WARN("parse getHostHints json failed\n");
 		return;
 	}
 
 	json_object_object_foreach(root, mac_key, val) {
-		dev_node_t *node = find_dev_node((char *)mac_key);
-
-		if (!node) {
-			node = add_dev_node((char *)mac_key);
-			if (!node) continue;
-			node->online = 0;
-			node->offline_time = get_timestamp();
-		}
-
-		if (json_object_object_get_ex(val, "name", &name_obj)) {
-			const char *name = json_object_get_string(name_obj);
-			if (name && name[0]) {
-				strncpy(node->hostname, name, sizeof(node->hostname) - 1);
-				node->hostname[sizeof(node->hostname) - 1] = '\0';
-			}
-		}
-
-		if (json_object_object_get_ex(val, "ipaddrs", &ipaddrs_obj) && json_object_array_length(ipaddrs_obj) > 0) {
-			const char *ip = json_object_get_string(json_object_array_get_idx(ipaddrs_obj, 0));
-			if (ip && ip[0]) {
-				strncpy(node->ip, ip, sizeof(node->ip) - 1);
-				node->ip[sizeof(node->ip) - 1] = '\0';
+		for (int i = 0; i < valid_count; i++) {
+			if (strcasecmp(mac_key, valid_macs[i]) == 0) {
+				update_node_from_json(mac_key, val);
+				break;
 			}
 		}
 	}
