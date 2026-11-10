@@ -133,7 +133,7 @@ void appfilter_nl_handler(struct uloop_fd *u, unsigned int ev)
 
 	kdata = kmsg + sizeof(struct af_msg_hdr);
 	kdata_off = (size_t)(kdata - buf);
-	if (kdata_off + (size_t)af_hdr->len >= sizeof(buf)) {
+	if (kdata_off + (size_t)af_hdr->len + 1 > sizeof(buf)) {
 		LOG_WARN("netlink data offset overflow");
 		return;
 	}
