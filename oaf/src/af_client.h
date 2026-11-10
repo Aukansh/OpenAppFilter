@@ -15,6 +15,7 @@
 #define MAX_RECORD_APP_NUM	64
 #define MAX_REPORT_URL_LEN	64
 #define MIN_REPORT_URL_LEN	4
+#define MAX_AF_IP_HASH_SIZE	64
 
 #define AF_CLIENT_LOCK_R()	read_lock_bh(&af_client_lock)
 #define AF_CLIENT_UNLOCK_R()	read_unlock_bh(&af_client_lock)
@@ -64,6 +65,7 @@ typedef struct visiting_info {
 
 typedef struct af_client_info {
 	struct list_head hlist;
+	struct hlist_node ip_hlist;
 	unsigned char mac[MAC_ADDR_LEN];
 	unsigned int ip;
 	struct in6_addr ipv6;
@@ -80,6 +82,7 @@ typedef struct af_client_info {
 	visiting_info_t visiting;
 	int timer_count;
 	int report_count;
+	spinlock_t visit_lock;
 	app_visit_info_t visit_info[MAX_RECORD_APP_NUM];
 } af_client_info_t;
 
@@ -96,5 +99,6 @@ af_client_info_t *nf_client_add(unsigned char *mac);
 void check_client_expire(void);
 void af_client_list_reset_report_num(void);
 void af_client_do_timer_tick(void);
+void af_client_update_ip(af_client_info_t *client, unsigned int ip);
 
 #endif /* __AF_CLIENT_H__ */
