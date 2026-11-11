@@ -378,9 +378,9 @@ static int add_app_feature(int appid, char *name, char *feature)
 	p = feature;
 	begin = feature;
 
-	while (*p++) {
+	while (*p) {
 		if (*p != ';')
-			continue;
+			{ p++; continue; }
 
 		switch (param_num) {
 		case AF_PROTO_PARAM_INDEX:
@@ -411,6 +411,7 @@ static int add_app_feature(int appid, char *name, char *feature)
 		}
 		param_num++;
 		begin = p + 1;
+		p++;
 	}
 
 	// old version
@@ -427,6 +428,8 @@ static int add_app_feature(int appid, char *name, char *feature)
 		proto = IPPROTO_TCP;
 	} else if (!strcmp(proto_str, "udp")) {
 		proto = IPPROTO_UDP;
+	} else if (strlen(proto_str) == 0) {
+		proto = 0;
 	} else {
 		printk("proto %s is not support, feature = %s\n", proto_str, feature);
 		return -1;
@@ -435,7 +438,12 @@ static int add_app_feature(int appid, char *name, char *feature)
 	sscanf(src_port_str, "%d", &src_port);
 	parse_port_info(dst_port_str, &dport_info);
 
-	add_app_feature_node(feature, appid, name, proto, src_port, dport_info, host_url, request_url, dict, search_str, ignore);
+	if (proto == 0) {
+		add_app_feature_node(feature, appid, name, IPPROTO_TCP, src_port, dport_info, host_url, request_url, dict, search_str, ignore);
+		add_app_feature_node(feature, appid, name, IPPROTO_UDP, src_port, dport_info, host_url, request_url, dict, search_str, ignore);
+	} else {
+		add_app_feature_node(feature, appid, name, proto, src_port, dport_info, host_url, request_url, dict, search_str, ignore);
+	}
 	return 0;
 }
 
