@@ -1018,24 +1018,10 @@ static int match_feature(flow_info_t *flow)
 
 	feature_list_read_lock();
 	if (proto_idx >= 0) {
-		if (g_custom_ad_enable) {
-			if (flow->dport < MAX_FEATURE_PORT) {
-				list_for_each_entry(node, &feature_hash[proto_idx][flow->dport], head) {
-					if (node->app_id == APPID_CUSTOM_AD && af_match_one(flow, node)) {
-						AF_LMT_INFO("match custom ad (hash), appid=%d, feature = %s\n", node->app_id, node->feature);
-						flow->app_id = node->app_id;
-						flow->ignore = node->ignore;
-						flow->feature = node;
-						strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
-						feature_list_read_unlock();
-						return AF_TRUE;
-					}
-				}
-			}
-
-			list_for_each_entry(node, &feature_fallback[proto_idx], head) {
+		if (flow->dport < MAX_FEATURE_PORT) {
+			list_for_each_entry(node, &feature_hash[proto_idx][flow->dport], head) {
 				if (node->app_id == APPID_CUSTOM_AD && af_match_one(flow, node)) {
-					AF_LMT_INFO("match custom ad (fallback), appid=%d, feature = %s\n", node->app_id, node->feature);
+					AF_LMT_INFO("match custom ad (hash), appid=%d, feature = %s\n", node->app_id, node->feature);
 					flow->app_id = node->app_id;
 					flow->ignore = node->ignore;
 					flow->feature = node;
@@ -1043,6 +1029,18 @@ static int match_feature(flow_info_t *flow)
 					feature_list_read_unlock();
 					return AF_TRUE;
 				}
+			}
+		}
+
+		list_for_each_entry(node, &feature_fallback[proto_idx], head) {
+			if (node->app_id == APPID_CUSTOM_AD && af_match_one(flow, node)) {
+				AF_LMT_INFO("match custom ad (fallback), appid=%d, feature = %s\n", node->app_id, node->feature);
+				flow->app_id = node->app_id;
+				flow->ignore = node->ignore;
+				flow->feature = node;
+				strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
+				feature_list_read_unlock();
+				return AF_TRUE;
 			}
 		}
 
@@ -1313,15 +1311,9 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		return NF_DROP;
 	}
 
-	if (conn->app_id == APPID_CUSTOM_AD) {
-		if (g_custom_ad_enable) {
-			AF_LMT_INFO("bypass drop custom ad\n");
-			return NF_DROP;
-		} else {
-			conn->app_id = 0;
-			conn->drop = 0;
-			conn->ver = 0;
-		}
+	if (conn->app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+		AF_LMT_INFO("bypass drop custom ad\n");
+		return NF_DROP;
 	}
 
 	if (conn->app_id != 0) {
@@ -1507,15 +1499,8 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		if (flow.ignore)
 			AF_LMT_DEBUG("match ignore appid = %d, drop = %d\n", app_id, ct_action);
 
-		if (app_id == APPID_CUSTOM_AD) {
-			if (g_custom_ad_enable) {
-				return NF_DROP;
-			} else {
-				ct->mark = 0;
-				app_id = 0;             
-				orig_mark = 0;
-				ct_action = 0;
-			}
+		if (app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+			return NF_DROP;
 		}
 
 		if (g_oaf_filter_enable) {
@@ -1721,15 +1706,13 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		}
 	}
 
-	if (flow.app_id == APPID_CUSTOM_AD) {
-		if (g_custom_ad_enable) {
-			ct->mark |= NF_DROP_BIT;
-			flow.drop = 1;
-			AF_LMT_INFO("##Drop custom ad flow (Global), appid = 999\n");
-			if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst)
-				nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
-			ret = NF_DROP;
-		}
+	if (flow.app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+		ct->mark |= NF_DROP_BIT;
+		flow.drop = 1;
+		AF_LMT_INFO("##Drop custom ad flow (Global), appid = 999\n");
+		if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst)
+			nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
+		ret = NF_DROP;
 	}
 
 	if (g_oaf_record_enable) {
