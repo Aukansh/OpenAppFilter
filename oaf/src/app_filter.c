@@ -1606,7 +1606,7 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 			else
 				ct->mark &= ~NF_DROP_BIT;
 
-			AF_LMT_DEBUG("oversize conn re-eval: mac=%s app_id=%u mode=%d quic=%d drop=%d\n", client_mac, app_id, g_app_filter_mode, g_disable_quic, should_drop);
+			AF_LMT_DEBUG("oversize conn re-eval: mac=" MAC_FMT " app_id=%u mode=%d quic=%d drop=%d\n", MAC_ARRAY(client_mac), app_id, g_app_filter_mode, g_disable_quic, should_drop);
 		}
 
 		return should_drop ? NF_DROP : NF_ACCEPT;
