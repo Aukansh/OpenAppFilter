@@ -1277,6 +1277,11 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		return NF_DROP;
 	}
 
+	if (conn->app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+		AF_LMT_INFO("bypass drop custom ad\n");
+		return NF_DROP;
+	}
+
 	if (conn->app_id != 0) {
 		flow.app_id = conn->app_id;
 		flow.drop = conn->drop;
@@ -1341,6 +1346,13 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 			}
 		}
 
+		if (flow.app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+			flow.drop = 1;
+			AF_LMT_INFO("##Drop custom ad flow in bypass mode\n");
+			if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst)
+				nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
+		}
+
 		u32 ver = (u32)atomic_read(&g_filter_version) & FILTER_VER_MODULUS;
 		u8 ignore_flag = 0;
 
@@ -1359,9 +1371,13 @@ static u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_d
 		}
 	}
 
-	if (flow.drop && g_oaf_filter_enable) {
-		AF_LMT_INFO("drop appid = %d\n", flow.app_id);
-		ret = NF_DROP;
+	if (flow.drop) {
+		if (flow.app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+			ret = NF_DROP;
+		} else if (g_oaf_filter_enable) {
+			AF_LMT_INFO("drop appid = %d\n", flow.app_id);
+			ret = NF_DROP;
+		}
 	}
 
 EXIT:
@@ -1448,6 +1464,10 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 
 		if (flow.ignore)
 			AF_LMT_DEBUG("match ignore appid = %d, drop = %d\n", app_id, ct_action);
+
+		if (app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+			return NF_DROP;
+		}
 
 		if (g_oaf_filter_enable) {
 			if (g_disable_quic && app_id == APPID_QUIC && ct_action && !dl_unblocked) {
@@ -1569,6 +1589,9 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 					kfree(re_dpi_buf);
 			}
 
+			if (app_id == APPID_CUSTOM_AD) {
+				should_drop = g_custom_ad_enable ? 1 : 0;
+			} else
 			if (g_oaf_filter_enable) {
 				if (g_disable_quic && !skb_is_nonlinear(skb) && af_match_quic(&flow)) {
 					should_drop = 1;
@@ -1649,6 +1672,15 @@ static u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_
 		}
 	}
 
+	if (flow.app_id == APPID_CUSTOM_AD && g_custom_ad_enable) {
+		ct->mark |= NF_DROP_BIT;
+		flow.drop = 1;
+		AF_LMT_INFO("##Drop custom ad flow (Global), appid = 999\n");
+		if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst)
+			nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
+		ret = NF_DROP;
+	}
+
 	if (g_oaf_record_enable) {
 		if (!flow.ignore)
 			af_update_client_app_info_by_mac(client_mac, flow.app_id, flow.drop);
@@ -1697,7 +1729,8 @@ static int report_flag = 0;
 
 static u32 compute_scalar_snapshot(void)
 {
-	return ((u32)(g_oaf_filter_enable & 1) << 4) |
+	return ((u32)(g_custom_ad_enable & 1) << 5) |
+	       ((u32)(g_oaf_filter_enable & 1) << 4) |
 	       ((u32)(g_disable_quic & 1) << 3) |
 	       ((u32)(g_app_filter_mode & 1) << 2) |
 	       ((u32)(g_daily_limit_mode & 1) << 1) |
