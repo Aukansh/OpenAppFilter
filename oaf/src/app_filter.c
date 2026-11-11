@@ -1012,7 +1012,33 @@ static int match_feature(flow_info_t *flow)
 	if (proto_idx >= 0) {
 		if (flow->dport < MAX_FEATURE_PORT) {
 			list_for_each_entry(node, &feature_hash[proto_idx][flow->dport], head) {
-				if (af_match_one(flow, node)) {
+				if (node->app_id == APPID_CUSTOM_AD && af_match_one(flow, node)) {
+					AF_LMT_INFO("match custom ad (hash), appid=%d, feature = %s\n", node->app_id, node->feature);
+					flow->app_id = node->app_id;
+					flow->ignore = node->ignore;
+					flow->feature = node;
+					strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
+					feature_list_read_unlock();
+					return AF_TRUE;
+				}
+			}
+		}
+
+		list_for_each_entry(node, &feature_fallback[proto_idx], head) {
+			if (node->app_id == APPID_CUSTOM_AD && af_match_one(flow, node)) {
+				AF_LMT_INFO("match custom ad (fallback), appid=%d, feature = %s\n", node->app_id, node->feature);
+				flow->app_id = node->app_id;
+				flow->ignore = node->ignore;
+				flow->feature = node;
+				strncpy(flow->app_name, node->app_name, sizeof(flow->app_name) - 1);
+				feature_list_read_unlock();
+				return AF_TRUE;
+			}
+		}
+
+		if (flow->dport < MAX_FEATURE_PORT) {
+			list_for_each_entry(node, &feature_hash[proto_idx][flow->dport], head) {
+				if (node->app_id != APPID_CUSTOM_AD && af_match_one(flow, node)) {
 					AF_LMT_INFO("match feature (hash), appid=%d, feature = %s\n", node->app_id, node->feature);
 					flow->app_id = node->app_id;
 					flow->ignore = node->ignore;
@@ -1025,7 +1051,7 @@ static int match_feature(flow_info_t *flow)
 		}
 
 		list_for_each_entry(node, &feature_fallback[proto_idx], head) {
-			if (af_match_one(flow, node)) {
+			if (node->app_id != APPID_CUSTOM_AD && af_match_one(flow, node)) {
 				AF_LMT_INFO("match feature (fallback), appid=%d, feature = %s\n", node->app_id, node->feature);
 				flow->app_id = node->app_id;
 				flow->ignore = node->ignore;
