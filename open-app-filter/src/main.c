@@ -23,6 +23,7 @@
 #define FORCE_DISCONNECT_HOLD_SECS	6
 #define TICK_INTERVAL_MS		1000
 #define INITIAL_TICK_MS			5000
+#define CUSTOM_AD_APPID			"999"
 
 enum {
 	FD_STATE_IDLE = 0,
@@ -540,6 +541,7 @@ static void af_load_global_config(af_global_config_t *config)
 	ret = af_uci_get_int_value(ctx, "appfilter.global.disable_quic"); config->disable_quic = (ret < 0) ? 0 : ret;
 	ret = af_uci_get_int_value(ctx, "appfilter.global.app_filter_mode"); config->app_filter_mode = (ret < 0) ? 0 : ret;
 	ret = af_uci_get_int_value(ctx, "appfilter.global.daily_limit_mode"); config->daily_limit_mode = (ret < 0) ? 0 : ret;
+	ret = af_uci_get_int_value(ctx, "appfilter.global.custom_ad_enable"); config->custom_ad_enable = (ret < 0) ? 0 : ret;
 
 	ret = af_uci_get_value(ctx, "appfilter.global.lan_ifname", lan_ifname, sizeof(lan_ifname));
 	if (ret < 0)
@@ -1019,6 +1021,32 @@ static void update_oaf_daily_limit_mode_status(void)
 	update_oaf_proc_value("daily_limit_mode", g_af_config.global.daily_limit_mode == 1 ? "1" : "0");
 }
 
+static void update_oaf_custom_ad_status(void)
+{
+	update_oaf_proc_value("custom_ad_enable", g_af_config.global.custom_ad_enable == 1 ? "1" : "0");
+}
+
+static void load_custom_ad_to_kernel(void)
+{
+	FILE *fp = fopen("/etc/appfilter/custom_ad.cfg", "r");
+	char line[1024];
+
+	if (!fp) {
+		LOG_DEBUG("No custom_ad.cfg found, skip.");
+		return;
+	}
+
+	while (fgets(line, sizeof(line), fp)) {
+		char feature_str[1100];
+		line[strcspn(line, "\r\n")] = 0;
+		if (strlen(line) == 0 || line[0] == '#') continue;
+
+		snprintf(feature_str, sizeof(feature_str), CUSTOM_AD_APPID " custom_ad:%s", line);
+		af_nl_add_feature(feature_str);
+	}
+	fclose(fp);
+}
+
 static int af_nl_clean_feature(void)
 {
 	af_msg_t msg;
@@ -1082,6 +1110,8 @@ static int reload_feature(void)
 		LOG_ERROR("Failed to load feature to kernel");
 		return -1;
 	}
+
+	load_custom_ad_to_kernel();
 
 	clean_invalid_app_records();
 	clear_device_app_statistics();
@@ -1148,6 +1178,7 @@ static void oaf_timeout_handler(struct uloop_timeout *t)
 		update_oaf_disable_quic_status();
 		update_oaf_app_filter_mode_status();
 		update_oaf_daily_limit_mode_status();
+		update_oaf_custom_ad_status();
 		g_oaf_config_change = 0;
 
 		if (g_af_config.time.time_mode != 1 && g_af_config.global.app_filter_mode == 0)
