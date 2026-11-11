@@ -23,7 +23,7 @@ char g_oaf_version[64] = AF_VERSION;
 int g_disable_quic = 0;
 int g_app_filter_mode = 0;  /* 0 = specified apps, 1 = all apps */
 int g_daily_limit_mode = 0; /* 0 = share total time, 1 = independent per device */
-int g_custom_ad_enable = 1; /* default enable custom ad block */
+int g_custom_ad_enable = 0; /* default enable custom ad block */
 
 /* cat /proc/sys/oaf/debug */
 static struct ctl_table oaf_table[] = {
