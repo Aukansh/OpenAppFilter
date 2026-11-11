@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 
-#define LOG_FILE_PATH			"/tmp/log/appfilter.log"
+#define LOG_FILE_PATH		"/tmp/log/appfilter.log"
 #define OAF_VERSION			"6.2.0"
 #define AF_CMD_SET_BLOCKED_MAC_LIST	6
 
@@ -72,6 +72,7 @@ typedef struct af_global_config {
 	int disable_quic;
 	int app_filter_mode;
 	int daily_limit_mode;
+	int custom_ad_enable;
 	char lan_ifname[16];
 } af_global_config_t;
 
