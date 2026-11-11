@@ -1026,27 +1026,6 @@ static void update_oaf_custom_ad_status(void)
 	update_oaf_proc_value("custom_ad_enable", g_af_config.global.custom_ad_enable == 1 ? "1" : "0");
 }
 
-static void load_custom_ad_to_kernel(void)
-{
-	FILE *fp = fopen("/etc/appfilter/custom_ad.cfg", "r");
-	char line[1024];
-
-	if (!fp) {
-		LOG_DEBUG("No custom_ad.cfg found, skip.");
-		return;
-	}
-
-	while (fgets(line, sizeof(line), fp)) {
-		char feature_str[1100];
-		line[strcspn(line, "\r\n")] = 0;
-		if (strlen(line) == 0 || line[0] == '#') continue;
-
-		snprintf(feature_str, sizeof(feature_str), CUSTOM_AD_APPID " custom_ad:%s", line);
-		af_nl_add_feature(feature_str);
-	}
-	fclose(fp);
-}
-
 static int af_nl_clean_feature(void)
 {
 	af_msg_t msg;
@@ -1071,6 +1050,27 @@ static int af_nl_add_feature(const char *feature)
 
 	send_msg_to_kernel(appfilter_nl_fd.fd, (void *)msg_buf, sizeof(af_msg_t) + strlen(feature) + 1);
 	return 0;
+}
+
+static void load_custom_ad_to_kernel(void)
+{
+	FILE *fp = fopen("/etc/appfilter/custom_ad.cfg", "r");
+	char line[1024];
+
+	if (!fp) {
+		LOG_DEBUG("No custom_ad.cfg found, skip.");
+		return;
+	}
+
+	while (fgets(line, sizeof(line), fp)) {
+		char feature_str[1100];
+		line[strcspn(line, "\r\n")] = 0;
+		if (strlen(line) == 0 || line[0] == '#') continue;
+
+		snprintf(feature_str, sizeof(feature_str), CUSTOM_AD_APPID " custom_ad:%s", line);
+		af_nl_add_feature(feature_str);
+	}
+	fclose(fp);
 }
 
 static int af_load_feature_to_kernel(void)
