@@ -1026,35 +1026,6 @@ static void update_oaf_custom_ad_status(void)
 	update_oaf_proc_value("custom_ad_enable", g_af_config.global.custom_ad_enable == 1 ? "1" : "0");
 }
 
-static int is_valid_custom_rule(const char *line)
-{
-	char tmp[1024];
-	char *p, *semicolon;
-	int field = 0;
-	int has_match_feature = 0;
-
-	snprintf(tmp, sizeof(tmp), "%s", line);
-	p = tmp;
-	if (*p == '[') p++;
-
-	while (*p && *p != ']') {
-		semicolon = strchr(p, ';');
-		if (!semicolon) break;
-
-		if (field == 3 || field == 4 || field == 5) {
-			if (semicolon - p > 0) {
-				has_match_feature = 1;
-				break;
-			}
-		}
-
-		p = semicolon + 1;
-		field++;
-	}
-
-	return has_match_feature;
-}
-
 static int af_nl_clean_feature(void)
 {
 	af_msg_t msg;
@@ -1095,11 +1066,6 @@ static void load_custom_ad_to_kernel(void)
 		char feature_str[1100];
 		line[strcspn(line, "\r\n")] = 0;
 		if (strlen(line) == 0 || line[0] == '#') continue;
-
-		if (!is_valid_custom_rule(line)) {
-			LOG_WARN("Custom ad rule is too broad (no host/url/dict), skip: %s", line);
-			continue;
-		}
 
 		snprintf(feature_str, sizeof(feature_str), CUSTOM_AD_APPID " custom_ad:%s", line);
 		af_nl_add_feature(feature_str);
