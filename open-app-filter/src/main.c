@@ -23,6 +23,7 @@
 #define FORCE_DISCONNECT_HOLD_SECS	6
 #define TICK_INTERVAL_MS		1000
 #define INITIAL_TICK_MS			5000
+#define CUSTOM_AD_APPID			"999"
 
 enum {
 	FD_STATE_IDLE = 0,
@@ -1040,7 +1041,7 @@ static void load_custom_ad_to_kernel(void)
 		line[strcspn(line, "\r\n")] = 0;
 		if (strlen(line) == 0 || line[0] == '#') continue;
 
-		snprintf(feature_str, sizeof(feature_str), "999 custom_ad %s", line);
+		snprintf(feature_str, sizeof(feature_str), CUSTOM_AD_APPID " custom_ad:%s", line);
 		af_nl_add_feature(feature_str);
 	}
 	fclose(fp);
